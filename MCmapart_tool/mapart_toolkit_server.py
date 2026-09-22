@@ -56,6 +56,7 @@ import socket
 import zipfile
 import tempfile
 import base64
+import asyncio
 import colorsys
 import threading
 import traceback
@@ -65,8 +66,8 @@ from urllib.parse import quote
 
 import numpy as np
 from PIL import Image, ImageFilter
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi.responses import HTMLResponse, Response, JSONResponse
+from fastapi import FastAPI, File, UploadFile, Form, Request
+from fastapi.responses import HTMLResponse, Response, JSONResponse, StreamingResponse
 import uvicorn
 
 try:
@@ -80,7 +81,25 @@ except ImportError:
 # 常量
 # ============================================================
 HOST = "127.0.0.1"
-PORT = 8765
+
+
+def _env_port(default=8765):
+    """
+    端口可用环境变量覆盖，方便和别的实例并存：
+        set MAPART_PORT=8899
+    """
+    raw = os.environ.get("MAPART_PORT", "").strip()
+    if raw:
+        try:
+            p = int(raw)
+            if 1 <= p <= 65535:
+                return p
+        except ValueError:
+            pass
+    return default
+
+
+PORT = _env_port()
 TASKS = {}
 TASK_LOCK = threading.Lock()
 KEEP_TASKS = 15
@@ -1062,6 +1081,46 @@ def do_glow_lichen(content, target_faces, progress_cb=None):
 
 
 # ============================================================
+# 页面保活：网页全关掉后自动退出进程
+# ============================================================
+# 用一条 SSE 长连接来判断页面是否还在，而不是定时 ping：
+# 定时器在浏览器后台标签页里会被限流到每分钟一次，容易误判；
+# 长连接则在标签页关闭的瞬间断开，最可靠。
+KEEPALIVE = {
+    "conns": 0,             # 当前打开的页面数
+    "last_seen": 0.0,       # 最后一次有页面连接的时间
+    "armed": False,         # 至少连上过一次页面才启用
+    "exit_on_close": True,  # 前端可以关掉这个行为
+}
+KEEPALIVE_LOCK = threading.Lock()
+KEEPALIVE_GRACE = 15.0      # 页面全关后等这么久再退出（容忍刷新 / 短暂重连）
+KEEPALIVE_TICK = 2.0        # SSE 心跳间隔
+
+
+def _keepalive_note(on):
+    """前端告知：关页面要不要顺带关掉服务。"""
+    with KEEPALIVE_LOCK:
+        KEEPALIVE["exit_on_close"] = bool(on)
+        KEEPALIVE["last_seen"] = time.time()
+
+
+def _keepalive_watchdog():
+    while True:
+        time.sleep(KEEPALIVE_TICK)
+        with KEEPALIVE_LOCK:
+            armed = KEEPALIVE["armed"]
+            enabled = KEEPALIVE["exit_on_close"]
+            conns = KEEPALIVE["conns"]
+            idle = time.time() - KEEPALIVE["last_seen"]
+        if not armed or not enabled or conns > 0:
+            continue
+        if idle > KEEPALIVE_GRACE:
+            print("所有页面已关闭，%d 秒无连接，自动退出。" % int(idle))
+            sys.stdout.flush()
+            os._exit(0)
+
+
+# ============================================================
 # 图片缓存
 # ============================================================
 IMAGE_CACHE = OrderedDict()
@@ -1172,6 +1231,56 @@ def api_palette():
         "total_groups": len(PALETTE_GROUPS),
         "total_blocks": len(ALL_BLOCK_IDS),
     }
+
+
+@app.get("/api/keepalive")
+async def api_keepalive(request: Request, exit_on_close: int = 1):
+    """
+    SSE 长连接。页面开着就一直连着；标签页一关，连接立刻断开，
+    看门狗线程据此判断"页面全关了"，再等一小会儿就退出进程。
+
+    相比定时 ping 的好处：后台标签页的定时器会被浏览器限流，长连接不会。
+    """
+    _keepalive_note(exit_on_close)
+
+    async def stream():
+        with KEEPALIVE_LOCK:
+            KEEPALIVE["conns"] += 1
+            KEEPALIVE["armed"] = True
+            KEEPALIVE["last_seen"] = time.time()
+        try:
+            yield ": connected\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                with KEEPALIVE_LOCK:
+                    KEEPALIVE["last_seen"] = time.time()
+                yield ": ping\n\n"
+                await asyncio.sleep(KEEPALIVE_TICK)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            with KEEPALIVE_LOCK:
+                KEEPALIVE["conns"] = max(0, KEEPALIVE["conns"] - 1)
+                KEEPALIVE["last_seen"] = time.time()
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-store",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    })
+
+
+@app.get("/api/keepalive/status")
+def api_keepalive_status():
+    with KEEPALIVE_LOCK:
+        return {
+            "ok": True,
+            "pages": KEEPALIVE["conns"],
+            "armed": KEEPALIVE["armed"],
+            "exit_on_close": KEEPALIVE["exit_on_close"],
+            "grace": KEEPALIVE_GRACE,
+        }
 
 
 @app.get("/api/icons.png")
@@ -1584,6 +1693,144 @@ def api_download(tid: str):
 # ============================================================
 # 入口
 # ============================================================
+class _NullWriter:
+    """
+    没有控制台时的占位输出流。
+
+    pythonw 启动、或用 PyInstaller 的 --windowed 打包之后，sys.stdout / sys.stderr
+    是 None。很多第三方库（uvicorn 就是）会直接拿它当流用：
+
+        self.use_colors = sys.stdout.isatty()      # uvicorn/logging.py
+        logging.StreamHandler(sys.stderr).write(…) # 日志处理器
+
+    None 上调用 isatty() 会抛 AttributeError，uvicorn 会把日志初始化搞失败，
+    最终报成 "Unable to configure formatter 'default'"。给一个什么都不做、
+    但接口完整的假流，比到处打补丁稳。
+    """
+
+    encoding = "utf-8"
+    errors = "replace"
+    closed = False
+    name = "<no console>"
+
+    def write(self, s):
+        return len(s) if s else 0
+
+    def writelines(self, lines):
+        return None
+
+    def flush(self):
+        return None
+
+    def isatty(self):
+        return False
+
+    def readable(self):
+        return False
+
+    def writable(self):
+        return True
+
+    def seekable(self):
+        return False
+
+    def close(self):
+        return None
+
+    def fileno(self):
+        raise OSError("没有控制台，无法取得文件描述符")
+
+
+def stdout_is_tty():
+    st = getattr(sys, "stdout", None)
+    try:
+        return bool(st is not None and st.isatty())
+    except Exception:
+        return False
+
+
+def _setup_console():
+    """
+    1. 没有控制台（stdout/stderr 为 None）时装上假流，避免第三方库炸。
+    2. 有控制台时把编码错误降级为替换字符 —— 冻结成 exe 后代码页往往不是
+       UTF-8，一 print 出 GBK 里没有的符号（✓ ✗ ⚠ …）就会抛
+       UnicodeEncodeError 把进程带崩。
+    """
+    for name in ("stdout", "stderr"):
+        st = getattr(sys, name, None)
+        if st is None:                     # pythonw / --windowed：没有控制台
+            setattr(sys, name, _NullWriter())
+            continue
+        try:
+            st.reconfigure(errors="replace")      # 保留原编码，只把编不出的字符换成 ?
+            continue
+        except Exception:
+            pass
+        buf = getattr(st, "buffer", None)
+        if buf is None:
+            continue
+        try:
+            enc = getattr(st, "encoding", None) or "utf-8"
+            setattr(sys, name, io.TextIOWrapper(
+                buf, encoding=enc, errors="replace", line_buffering=True))
+        except Exception:
+            pass
+
+
+def _install_excepthook():
+    """
+    窗口版 exe 崩溃时控制台信息是看不见的，这里弹一个对话框把错误显示出来，
+    免得用户只看到"双击没反应"。
+    """
+    def hook(exc_type, exc, tb):
+        text = "".join(traceback.format_exception(exc_type, exc, tb))
+        try:
+            sys.stderr.write(text)
+        except Exception:
+            pass
+        try:
+            if sys.platform.startswith("win"):
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(
+                    0, ("程序启动失败：\n\n" + text)[-1800:],
+                    "地图画工具箱", 0x10)
+        except Exception:
+            pass
+
+    sys.excepthook = hook
+
+
+def safe_pause(prompt="按回车键退出…"):
+    """
+    安全版 input()：没有可用终端时直接静默返回。
+
+    用 pythonw 启动、或用 PyInstaller 的 --windowed 打包之后，进程没有控制台，
+    sys.stdin 可能是 None 或失效的流，此时 input() 会抛
+    RuntimeError: lost sys.stdin（旧代码只捕获 EOFError，兜不住）。
+
+    返回 True 表示确实等到了用户按键，False 表示没有交互终端、直接跳过。
+    """
+    stream = getattr(sys, "stdin", None)
+    if stream is None:
+        return False
+    try:
+        if getattr(stream, "closed", False):
+            return False
+        if not stream.isatty():          # 管道 / 重定向 / 伪终端都当作非交互
+            return False
+    except Exception:
+        return False
+    try:
+        input(prompt)
+        return True
+    except (EOFError, KeyboardInterrupt, RuntimeError, OSError, ValueError):
+        return False
+
+
+_setup_console()
+_install_excepthook()
+
+
 def main():
     print("=" * 60)
     print("地图画工具箱 - 后端服务")
@@ -1593,7 +1840,7 @@ def main():
     print(f"资源目录 : {get_base_dir()}")
 
     idx = os.path.join(get_base_dir(), "index.html")
-    print(f"index.html: {'✓ 存在' if os.path.isfile(idx) else '✗ 缺失'}  ({idx})")
+    print(f"index.html: {'√ 存在' if os.path.isfile(idx) else '× 缺失'}  ({idx})")
     print(f"监听地址 : http://{HOST}:{PORT}")
     print("=" * 60)
 
@@ -1608,10 +1855,7 @@ def main():
                 ctypes.windll.user32.MessageBoxW(0, msg, "启动失败", 0x10)
         except Exception:
             pass
-        try:
-            input("按回车键退出…")
-        except EOFError:
-            pass
+        safe_pause()
         sys.exit(1)
 
     try:
@@ -1625,7 +1869,9 @@ def main():
                f"  1. 命令行执行：\n"
                f"     netstat -ano | findstr :{PORT}\n"
                f"     找到 PID 后：taskkill /PID <PID> /F\n"
-               f"  2. 或修改脚本里的 PORT 为其他值（比如 8899）")
+               f"  2. 或者换个端口启动（不影响已有实例）：\n"
+               f"     set MAPART_PORT=8899\n"
+               f"     然后再运行本程序")
         print("[错误] " + msg)
         try:
             if sys.platform.startswith("win"):
@@ -1633,10 +1879,7 @@ def main():
                 ctypes.windll.user32.MessageBoxW(0, msg, "启动失败", 0x10)
         except Exception:
             pass
-        try:
-            input("按回车键退出…")
-        except EOFError:
-            pass
+        safe_pause()
         sys.exit(2)
 
     url = f"http://{HOST}:{PORT}"
@@ -1644,13 +1887,25 @@ def main():
 
     def run_server():
         try:
-            uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+            # use_colors 一定要显式给布尔值：留空时 uvicorn 会去调
+            # sys.stdout.isatty() 来判断，而无控制台环境下那是 None。
+            kwargs = dict(host=HOST, port=PORT, log_level="warning")
+            try:
+                import inspect as _inspect
+                if "use_colors" in _inspect.signature(uvicorn.run).parameters:
+                    kwargs["use_colors"] = stdout_is_tty()
+            except Exception:
+                pass
+            uvicorn.run(app, **kwargs)
         except Exception as e:
             server_error["msg"] = str(e)
             traceback.print_exc()
 
     t = threading.Thread(target=run_server, daemon=True)
     t.start()
+
+    # 页面保活看门狗：所有页面关掉之后自动结束本进程
+    threading.Thread(target=_keepalive_watchdog, daemon=True).start()
 
     ready = False
     for _ in range(150):
@@ -1672,22 +1927,19 @@ def main():
                 ctypes.windll.user32.MessageBoxW(0, msg, "启动失败", 0x10)
         except Exception:
             pass
-        try:
-            input("按回车键退出…")
-        except EOFError:
-            pass
+        safe_pause()
         sys.exit(3)
 
     if ready:
-        print(f"✓ 服务器就绪：{url}")
+        print(f"√ 服务器就绪：{url}")
         try:
             webbrowser.open(url)
-            print("✓ 浏览器已打开")
+            print("√ 浏览器已打开")
         except Exception as e:
-            print(f"⚠ 自动打开浏览器失败：{e}")
+            print(f"! 自动打开浏览器失败：{e}")
             print(f"  请手动访问：{url}")
     else:
-        print(f"⚠ 等待超时，请手动访问：{url}")
+        print(f"! 等待超时，请手动访问：{url}")
 
     print("-" * 60)
     print("服务运行中。要停止服务，按 Ctrl+C 或直接关闭本窗口。")

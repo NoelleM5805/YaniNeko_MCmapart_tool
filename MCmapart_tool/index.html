@@ -1643,6 +1643,10 @@
 
                         <div class="set-group">配置</div>
                         <div class="set-row">
+                            <span title="关掉全部网页后，程序会自己结束，不用再去手动关窗口">关闭页面后自动退出</span>
+                            <button class="switch on" id="set-exit-on-close"></button>
+                        </div>
+                        <div class="set-row">
                             <span>自动记住上次配置</span>
                             <button class="switch on" id="set-persist"></button>
                         </div>
@@ -2367,6 +2371,7 @@
             hex: true,
             iconPx: 16,
             previewSide: 384,
+            exitOnClose: true,      // 关掉网页后自动结束服务进程
             blocks: null,           // null = 用服务端默认
             adjust: {},             // 曝光/亮度/...
             form: {},               // 算法/抖动/尺寸等表单
@@ -2382,7 +2387,7 @@
                 if (typeof o.persist === "boolean") CFG.persist = o.persist;
                 if (!CFG.persist) return;       // 关掉记忆就不再恢复
                 ["theme", "icons", "hex", "iconPx", "previewSide",
-                    "blocks", "adjust", "form"].forEach(k => {
+                    "exitOnClose", "blocks", "adjust", "form"].forEach(k => {
                         if (o[k] !== undefined && o[k] !== null) CFG[k] = o[k];
                     });
             } catch (e) { /* 配置损坏就当没有 */ }
@@ -2823,6 +2828,33 @@
         bindSwitch("set-icons", "icons", () => { applyDisplayOpts(); });
         bindSwitch("set-hex", "hex", () => { applyDisplayOpts(); });
         bindSwitch("set-persist", "persist", () => { setInfo(); cfgSave(true); });
+        bindSwitch("set-exit-on-close", "exitOnClose", () => { keepaliveConnect(); });
+
+        // ============================================================
+        // 页面保活：关掉网页后让服务端自己退出
+        //   用 SSE 长连接而不是定时 ping —— 后台标签页的定时器会被浏览器
+        //   限流（可能一分钟才跑一次），长连接则随页面关闭立刻断开。
+        // ============================================================
+        const KA = { src: null };
+
+        function keepaliveConnect() {
+            if (KA.src) {
+                KA.src.close();
+                KA.src = null;
+            }
+            if (!window.EventSource) return;
+            try {
+                KA.src = new EventSource(
+                    "/api/keepalive?exit_on_close=" + (CFG.exitOnClose ? 1 : 0));
+            } catch (e) {
+                console.warn("保活连接建立失败：", e);
+            }
+        }
+
+        // 关页面时顺手断掉，让服务端尽快察觉（不断也行，连接会自己断）
+        window.addEventListener("pagehide", () => {
+            if (KA.src) { try { KA.src.close(); } catch (e) { } KA.src = null; }
+        });
 
         $("set-reset").addEventListener("click", () => {
             if (!confirm("恢复默认配置？方块选择、图片调整和所有设置都会重置。")) return;
@@ -2860,6 +2892,7 @@
             switchSet($("set-icons"), CFG.icons);
             switchSet($("set-hex"), CFG.hex);
             switchSet($("set-persist"), CFG.persist);
+            switchSet($("set-exit-on-close"), CFG.exitOnClose);
             setInfo();
         }
 
@@ -3075,6 +3108,7 @@
         });
 
         loadPalette();
+        keepaliveConnect();
     </script>
 </body>
 
