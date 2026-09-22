@@ -78,6 +78,10 @@ TEX_ALIAS = {
     "smooth_sandstone": "sandstone_top",
     "smooth_red_sandstone": "red_sandstone_top",
     "smooth_quartz": "quartz_block_top",
+    # 测重压力板没有独立贴图，直接复用金属块贴图
+    # （查 models/block/light_weighted_pressure_plate.json -> textures.texture = block/gold_block）
+    "light_weighted_pressure_plate": "gold_block",
+    "heavy_weighted_pressure_plate": "iron_block",
 }
 
 

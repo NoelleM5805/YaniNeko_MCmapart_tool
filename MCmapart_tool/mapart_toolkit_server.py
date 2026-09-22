@@ -16,6 +16,10 @@
     上面这些由 gen_blockdata.py 生成到 blockdata.py，服务端按「颜色值」分组，
     前端在侧边栏按颜色挑选方块（单选 / 多选 / 全不选）。
     勾选的方块颜色去重后即为匹配调色板；同色多选时成品在它们之间随机分配。
+    同名不同色的条目取数据文件里靠后的那条。
+    部分方块需要固定方块状态（发光地衣 down=true、铁活板门 half=bottom 等），
+    在 gen_blockdata.py 的 BLOCK_PROPS 里配置，构建投影时用
+    BlockState(id, **props) 写进 .litematic。
 
 依赖：
     pip install fastapi uvicorn litemapy pillow numpy python-multipart
@@ -43,6 +47,7 @@
 import os
 import sys
 import io
+import re
 import json
 import math
 import time
@@ -155,15 +160,33 @@ def _color_sort_key(hexv):
     return (1, h, 1.0 - v, hexv)
 
 
+def _parse_block_props(s):
+    """把 "down=true,up=false" 解析成 {"down": "true", "up": "false"}。"""
+    out = {}
+    if not s:
+        return out
+    for part in str(s).split(","):
+        k, sep, v = part.partition("=")
+        k, v = k.strip(), v.strip()
+        if sep and k:
+            out[k] = v
+    return out
+
+
 def _load_blockdata():
     """
     方块表由 gen_blockdata.py 生成到 blockdata.py。
-    每行：(方块 ID, 中文名, 颜色 hex, 图标列, 图标行)
+    每行：(方块 ID, 中文名, 颜色 hex, 图标列, 图标行, 方块状态)
+    方块状态形如 "down=true,up=false"，没有就是空串。
     """
     try:
         import blockdata as bd
-        rows = [(str(b), str(n), str(c).upper(), int(cx), int(cy))
-                for b, n, c, cx, cy in bd.BLOCK_ROWS]
+        rows = []
+        for r in bd.BLOCK_ROWS:
+            bid, label, hexv, cx, cy = r[0], r[1], r[2], r[3], r[4]
+            props = r[5] if len(r) > 5 else ""
+            rows.append((str(bid), str(label), str(hexv).upper(),
+                         int(cx), int(cy), str(props)))
     except Exception as e:
         print("=" * 60)
         print("[错误] 读不到方块数据 blockdata.py：%s" % e)
@@ -181,8 +204,9 @@ def _load_blockdata():
         "cols": int(getattr(bd, "ICON_COLS", 16)),
         "rows": int(getattr(bd, "ICON_ROWS", 1)),
     }
-    print("[方块表] blockdata.py：%d 个方块 / %d 种颜色"
-          % (len(rows), len({r[2] for r in rows})))
+    n_props = sum(1 for r in rows if r[5])
+    print("[方块表] blockdata.py：%d 个方块 / %d 种颜色 / %d 个带方块状态"
+          % (len(rows), len({r[2] for r in rows}), n_props))
     return rows, icon
 
 
@@ -191,10 +215,11 @@ def _build_palette_groups(rows):
     按颜色值分组：一个颜色一组，组内是该颜色的所有方块。
     返回 [{"hex": "#606060", "rgb": (96, 96, 96),
           "blocks": [{"id": "minecraft:stone", "label": "石头",
-                      "name_eng": "stone", "cx": 0, "cy": 0}, ...]}, ...]
+                      "name_eng": "stone", "cx": 0, "cy": 0,
+                      "props": "down=true"}, ...]}, ...]
     """
     bucket = {}
-    for bid, label, hexv, cx, cy in rows:
+    for bid, label, hexv, cx, cy, props in rows:
         g = bucket.get(hexv)
         if g is None:
             g = {"hex": hexv, "rgb": _hex_to_rgb(hexv), "blocks": []}
@@ -205,6 +230,7 @@ def _build_palette_groups(rows):
             "label": label,
             "cx": cx,
             "cy": cy,
+            "props": props,
         })
     for g in bucket.values():
         g["blocks"].sort(key=lambda b: b["label"])
@@ -213,6 +239,14 @@ def _build_palette_groups(rows):
 
 BLOCK_ROWS, ICON_META = _load_blockdata()
 PALETTE_GROUPS = _build_palette_groups(BLOCK_ROWS)
+
+# 方块 ID -> 方块状态（构建投影时用）
+BLOCK_PROPS_MAP = {}
+for _g in PALETTE_GROUPS:
+    for _b in _g["blocks"]:
+        _p = _parse_block_props(_b["props"])
+        if _p:
+            BLOCK_PROPS_MAP[_b["id"]] = _p
 
 # 全部可选方块 ID 与「每个颜色只选一个」的默认配置
 ALL_BLOCK_IDS = frozenset(
@@ -582,17 +616,34 @@ def fit_image(img, tw, th, mode):
 
 
 # ============================================================
-# 图片调整（左侧边栏：曝光 / 亮度 / 对比度 / 锐化 / 暗角）
+# 图片调整（左侧边栏）
+#   基础：曝光 / 对比 / 饱和 / 亮度
+#   影调：高光 / 暗部
+#   颜色：色温 / 色调
+#   细节：锐化 / 清晰 / 色散
+#   效果：暗角
 # ============================================================
-ADJUST_KEYS = ("exposure", "brightness", "contrast", "sharpen", "vignette")
+ADJUST_KEYS = ("exposure", "contrast", "saturation", "brightness",
+               "highlights", "shadows", "temperature", "tint",
+               "sharpen", "clarity", "dispersion", "vignette")
 
 ADJUST_LABELS = {
     "exposure": "曝光",
+    "contrast": "对比",
+    "saturation": "饱和",
     "brightness": "亮度",
-    "contrast": "对比度",
+    "highlights": "高光",
+    "shadows": "暗部",
+    "temperature": "色温",
+    "tint": "色调",
     "sharpen": "锐化",
+    "clarity": "清晰",
+    "dispersion": "色散",
     "vignette": "暗角",
 }
+
+# 这几个只有正向有意义（负值等于不做）
+ADJUST_UNIPOLAR = ("sharpen", "clarity", "vignette")
 
 
 def parse_adjust(payload):
@@ -606,39 +657,114 @@ def parse_adjust(payload):
             v = int(round(float(raw.get(k, 0))))
         except (TypeError, ValueError):
             v = 0
-        out[k] = max(-100, min(100, v))
-    if out["sharpen"] < 0:
-        out["sharpen"] = 0
-    if out["vignette"] < 0:
-        out["vignette"] = 0
+        v = max(-100, min(100, v))
+        if k in ADJUST_UNIPOLAR and v < 0:
+            v = 0
+        out[k] = v
     if all(v == 0 for v in out.values()):
         return None
     return out
 
 
+def _apply_dispersion(img, amount):
+    """
+    色散（镜头色差）：红/蓝通道以画面中心为原点做轻微径向位移，
+    越靠边偏移越大，中间基本不动 —— 和真实镜头的横向色差一致。
+    """
+    n = float(amount) * 3.0                       # ±3 像素
+    if abs(n) < 0.05:
+        return img
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    h, w = arr.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    cx = max((w - 1) / 2.0, 1e-6)
+    cy = max((h - 1) / 2.0, 1e-6)
+    dx = (xx - cx) / cx
+    dy = (yy - cy) / cy
+    out = arr.copy()
+    for ch, sign in ((0, 1.0), (2, -1.0)):        # 红往外、蓝往内（负值反过来）
+        sx = np.clip(np.rint(xx + dx * n * sign).astype(np.int32), 0, w - 1)
+        sy = np.clip(np.rint(yy + dy * n * sign).astype(np.int32), 0, h - 1)
+        out[..., ch] = arr[sy, sx, ch]
+    return Image.fromarray((np.clip(out, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8), "RGB")
+
+
 def apply_image_adjust(img, adj):
     """
-    在「已缩放成成品尺寸」的图上做调整，顺序：曝光 -> 亮度 -> 对比度 -> 暗角 -> 锐化。
-    暗角按成品画幅计算，所以必须先缩放再处理。
+    在「已缩放成成品尺寸」的图上做调整。
+    顺序：曝光 -> 亮度 -> 对比 -> 高光/暗部 -> 饱和 -> 色温/色调
+          -> 清晰 -> 暗角 -> 色散 -> 锐化
+    暗角 / 色散按成品画幅计算，所以必须先缩放再处理。
     """
     if not adj:
         return img
 
     exposure = adj.get("exposure", 0) / 100.0
-    brightness = adj.get("brightness", 0) / 100.0
     contrast = adj.get("contrast", 0) / 100.0
+    saturation = adj.get("saturation", 0) / 100.0
+    brightness = adj.get("brightness", 0) / 100.0
+    highlights = adj.get("highlights", 0) / 100.0
+    shadows = adj.get("shadows", 0) / 100.0
+    temperature = adj.get("temperature", 0) / 100.0
+    tint = adj.get("tint", 0) / 100.0
     sharpen = adj.get("sharpen", 0) / 100.0
+    clarity = adj.get("clarity", 0) / 100.0
+    dispersion = adj.get("dispersion", 0) / 100.0
     vignette = adj.get("vignette", 0) / 100.0
 
-    if exposure or brightness or contrast or vignette:
-        a = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    base = img.convert("RGB")
+    pixel_ops = (exposure, contrast, saturation, brightness, highlights, shadows,
+                 temperature, tint, clarity, dispersion, vignette)
+
+    if any(pixel_ops):
+        a = np.asarray(base, dtype=np.float32) / 255.0
+
+        # --- 基础 ---
         if exposure:
             a = a * (2.0 ** (exposure * 1.5))          # ±1.5 档
         if brightness:
             a = a + brightness * 0.5                   # ±50% 亮度偏移
         if contrast:
-            a = (a - 0.5) * (1.0 + contrast) + 0.5     # ±100% 对比度
+            a = (a - 0.5) * (1.0 + contrast) + 0.5     # ±100% 对比
         a = np.clip(a, 0.0, 1.0)
+
+        # --- 影调：只作用在亮部 / 暗部 ---
+        if highlights or shadows:
+            lum = a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114
+            if highlights:
+                w = np.clip((lum - 0.5) * 2.0, 0.0, 1.0)[..., None]
+                a = a + highlights * 0.55 * w
+            if shadows:
+                w = np.clip((0.5 - lum) * 2.0, 0.0, 1.0)[..., None]
+                a = a + shadows * 0.55 * w
+            a = np.clip(a, 0.0, 1.0)
+
+        # --- 饱和 ---
+        if saturation:
+            lum = (a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114)[..., None]
+            a = lum + (a - lum) * (1.0 + saturation)
+            a = np.clip(a, 0.0, 1.0)
+
+        # --- 色温 / 色调 ---
+        if temperature:
+            a = a.copy()
+            a[..., 0] += temperature * 0.13
+            a[..., 2] -= temperature * 0.13
+        if tint:
+            a = a.copy()
+            a[..., 1] += tint * 0.10
+            a[..., 0] -= tint * 0.05
+            a[..., 2] -= tint * 0.05
+        a = np.clip(a, 0.0, 1.0)
+
+        # --- 清晰：中频局部对比 ---
+        if clarity:
+            cur = Image.fromarray((a * 255.0 + 0.5).astype(np.uint8), "RGB")
+            blurred = np.asarray(cur.filter(ImageFilter.GaussianBlur(4)),
+                                 dtype=np.float32) / 255.0
+            a = np.clip(a + clarity * 0.9 * (a - blurred), 0.0, 1.0)
+
+        # --- 暗角 ---
         if vignette:
             h, w = a.shape[:2]
             yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
@@ -647,7 +773,14 @@ def apply_image_adjust(img, adj):
             r = np.sqrt(((xx - cx) / cx) ** 2 + ((yy - cy) / cy) ** 2)
             falloff = np.clip((r - 0.35) / 0.75, 0.0, 1.0) ** 1.4
             a = a * (1.0 - vignette * falloff)[:, :, None]
-        img = Image.fromarray((a * 255.0 + 0.5).astype(np.uint8), "RGB")
+
+        img = Image.fromarray((np.clip(a, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8), "RGB")
+
+        # --- 色散 ---
+        if dispersion:
+            img = _apply_dispersion(img, dispersion)
+    else:
+        img = base
 
     if sharpen:
         img = img.filter(ImageFilter.UnsharpMask(
@@ -753,7 +886,8 @@ def build_mapart_schematic(idx, pal, seed=None, with_counts=False):
             name = names[row, col]
             bs = cache.get(name)
             if bs is None:
-                bs = BlockState(name)
+                # 部分方块（发光地衣 / 铁活板门 / 压力板…）要带上固定方块状态
+                bs = BlockState(name, **BLOCK_PROPS_MAP.get(name, {}))
                 cache[name] = bs
             try:
                 region[col, 0, row] = bs
@@ -778,6 +912,32 @@ def schem_to_bytes(schem):
     finally:
         try: os.unlink(tmp.name)
         except OSError: pass
+
+
+def safe_litematic_name(name, fallback="mapart.litematic"):
+    """
+    把用户/图片文件名整理成安全的 .litematic 文件名：
+    去掉路径分隔符与控制字符、限制长度、补上扩展名。
+    """
+    if not name:
+        return fallback
+    name = str(name).strip()
+    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", name)   # 非法字符
+    name = name.strip(" .")
+    if not name:
+        return fallback
+    lower = name.lower()
+    if lower.endswith(".litematic"):
+        name = name[:-len(".litematic")]
+    else:
+        # 去掉原图片的扩展名（.png / .jpg …）
+        name = os.path.splitext(name)[0]
+    name = name.strip(" .")
+    if not name:
+        return fallback
+    if len(name) > 80:
+        name = name[:80]
+    return name + ".litematic"
 
 
 def split_boundaries(total, parts):
@@ -973,21 +1133,41 @@ def index():
     p = os.path.join(get_base_dir(), "index.html")
     try:
         with open(p, "r", encoding="utf-8") as f:
-            return f.read()
+            body = f.read()
     except FileNotFoundError:
         return HTMLResponse("<h1>缺少 index.html</h1>", status_code=500)
+    # 本地工具，页面永远取最新的，免得改了前端还看到旧版
+    return HTMLResponse(body, headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 # ------------------------------------------------------------
 # 调色板（供前端渲染按颜色分组的方块选择面板）
 # ------------------------------------------------------------
+def _icon_url():
+    """
+    图标贴图集的带版本地址。
+
+    贴图集每次重新生成，每个方块所处的格子都会变；如果浏览器还拿着
+    旧图 + 新坐标，就会出现整体错位。所以地址上挂一个内容指纹，
+    内容一变地址就变，缓存自然失效。
+    """
+    p = get_resource_path(ICON_META["file"])
+    if not p:
+        return "/api/icons.png"
+    try:
+        st = os.stat(p)
+        return "/api/icons.png?v=%d-%d" % (int(st.st_mtime), int(st.st_size))
+    except OSError:
+        return "/api/icons.png"
+
+
 @app.get("/api/palette")
 def api_palette():
     return {
         "ok": True,
         "source": BLOCK_SOURCE_FILE,
         "groups": PALETTE_META,
-        "icon": ICON_META,
+        "icon": dict(ICON_META, url=_icon_url()),
         "defaults": DEFAULT_BLOCK_IDS,
         "total_groups": len(PALETTE_GROUPS),
         "total_blocks": len(ALL_BLOCK_IDS),
@@ -1002,8 +1182,10 @@ def api_icons():
                             status_code=404)
     with open(p, "rb") as f:
         data = f.read()
+    # 地址带版本，所以可以放心长缓存
     return Response(content=data, media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=86400"})
+                    headers={"Cache-Control": "public, max-age=86400",
+                             "ETag": '"%s"' % _icon_url().split("v=")[-1]})
 
 
 # ------------------------------------------------------------
@@ -1167,6 +1349,7 @@ async def api_mapart_generate(payload: dict):
     strength = int(payload.get("strength", 100))
     selected = payload.get("blocks")
     adj = parse_adjust(payload)
+    out_name = safe_litematic_name(payload.get("filename"))
 
     pal, used = make_palette(selected)
     if pal.n == 0:
@@ -1212,7 +1395,7 @@ async def api_mapart_generate(payload: dict):
             add_log(task, f"调色板：启用 {pal.n} 个颜色 / {len(used)} 个方块")
             add_log(task, "处理像素…")
             st = max(0.0, min(1.0, strength / 100.0))
-            idx, _ = process_image(work, algo, dither, st, pal)
+            idx, rgb = process_image(work, algo, dither, st, pal)
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
             schem, placed, counts = build_mapart_schematic(
@@ -1221,8 +1404,16 @@ async def api_mapart_generate(payload: dict):
             add_log(task, "保存文件…")
             data = schem_to_bytes(schem)
 
+            # 全尺寸最终效果图：方块分布的 1:1 还原，下载前确认用
+            try:
+                ibuf = io.BytesIO()
+                Image.fromarray(rgb, mode="RGB").save(ibuf, format="PNG")
+                task["result_image"] = ibuf.getvalue()
+            except Exception as e:
+                add_log(task, "预览图生成失败（不影响下载）：%s" % e)
+
             task["result_bytes"] = data
-            task["result_name"] = "mapart.litematic"
+            task["result_name"] = out_name
             task["result"] = {
                 "width": idx.shape[1],
                 "height": idx.shape[0],
@@ -1231,9 +1422,12 @@ async def api_mapart_generate(payload: dict):
                 "groups_used": pal.n,
                 "counts": counts,
                 "total_blocks": placed,
+                "filename": out_name,
+                "has_image": bool(task.get("result_image")),
             }
             add_log(task, f"完成 ✓ {idx.shape[1]}×{idx.shape[0]}，{placed} 方块，"
                           f"用到 {len(counts)} 种方块")
+            add_log(task, f"文件名：{out_name}")
         except Exception as e:
             task["error"] = str(e)
             add_log(task, "❌ " + str(e))
@@ -1358,6 +1552,16 @@ def api_status(tid: str):
             "error": t["error"],
             "result": t["result"],
         }
+
+
+@app.get("/api/result-image/{tid}")
+def api_result_image(tid: str):
+    """生成任务的全尺寸最终效果图（1 像素 = 1 方块），下载前确认用。"""
+    t = TASKS.get(tid)
+    if not t or not t.get("result_image"):
+        return JSONResponse({"ok": False, "msg": "预览图不存在"}, status_code=404)
+    return Response(content=t["result_image"], media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/download/{tid}")

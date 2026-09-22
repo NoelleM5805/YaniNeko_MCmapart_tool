@@ -1034,26 +1034,21 @@
         .workspace {
             display: grid;
             grid-template-columns: 312px minmax(0, 1fr) 272px;
+            gap: 8px;
             align-items: start;
         }
 
-        .workspace.no-left { grid-template-columns: 0 minmax(0, 1fr) 272px; }
-        .workspace.no-right { grid-template-columns: 312px minmax(0, 1fr) 0; }
-        .workspace.no-left.no-right { grid-template-columns: 0 minmax(0, 1fr) 0; }
-
         .sidebar {
             background: var(--soft);
-            border-right: 1px solid var(--border);
+            border: 1px solid var(--border);
+            border-radius: 11px;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             align-self: stretch;
         }
 
-        .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
-
-        .workspace.no-left .sidebar-left,
-        .workspace.no-right .sidebar-right { display: none; }
+        .sidebar-right { border: 1px solid var(--border); }
 
         .sb-head {
             display: flex;
@@ -1090,25 +1085,6 @@
 
         .sb-pane { display: none; }
         .sb-pane.active { display: block; }
-
-        .sb-collapse {
-            font-size: 11px; color: var(--muted); background: transparent;
-            border: 1px solid var(--border-2); border-radius: 6px;
-            padding: 2px 7px; cursor: pointer;
-        }
-
-        .sb-collapse:hover { color: var(--accent); border-color: var(--accent); }
-
-        .sb-rails { display: flex; gap: 6px; padding: 8px 26px 0; }
-
-        .sb-rail {
-            font-size: 12px; padding: 5px 12px; border-radius: 8px;
-            border: 1px solid var(--border-2); background: var(--panel-2);
-            color: var(--muted); cursor: pointer; transition: .13s;
-        }
-
-        .sb-rail:hover { color: var(--accent); border-color: var(--accent); }
-        .sb-rail[hidden] { display: none; }
 
         /* ============================================================
            方块选择（颜色分组 + 色块 + 色号 + 图标）
@@ -1198,7 +1174,8 @@
 
         .pal-icon {
             width: var(--icon-px); height: var(--icon-px); flex-shrink: 0;
-            background-image: url("/api/icons.png"); background-repeat: no-repeat;
+            background-image: var(--icon-url, url("/api/icons.png"));
+            background-repeat: no-repeat;
             background-size: calc(var(--icon-px) * var(--icon-cols)) calc(var(--icon-px) * var(--icon-rows));
             image-rendering: pixelated; border-radius: 2px;
         }
@@ -1214,6 +1191,14 @@
            图片调整
            ============================================================ */
         .adj-row { margin-bottom: 10px; }
+
+        .adj-group {
+            font-size: 11px; font-weight: 700; color: var(--muted);
+            letter-spacing: .4px; margin: 14px 0 6px;
+            padding-bottom: 3px; border-bottom: 1px solid var(--border);
+        }
+
+        .adj-group:first-of-type { margin-top: 2px; }
 
         .adj-top {
             display: flex; align-items: center; justify-content: space-between;
@@ -1307,6 +1292,14 @@
         }
 
         .usage-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--faint); }
+
+        .final-box {
+            min-height: 260px;
+        }
+
+        .final-box img {
+            max-height: 460px;
+        }
     </style>
 </head>
 
@@ -1325,11 +1318,6 @@
 
         <div class="tab-panel active" data-panel="mapart">
 
-            <div class="sb-rails">
-                <button class="sb-rail" id="rail-left" hidden>&#9656; 方块 / 图片</button>
-                <button class="sb-rail" id="rail-right" hidden>设置 &#9666;</button>
-            </div>
-
             <div class="workspace" id="mp-workspace">
 
                 <!-- ================= 左侧边栏：方块选择 + 图片调整 ================= -->
@@ -1340,7 +1328,6 @@
                             <span class="sb-tab active" data-sb="blocks">方块选择</span>
                             <span class="sb-tab" data-sb="adjust">图片调整</span>
                         </div>
-                        <button class="sb-collapse" id="sb-left-hide" title="收起侧边栏">&#9666;</button>
                     </div>
                     <div class="sb-body">
 
@@ -1360,47 +1347,94 @@
 
                         <div class="sb-pane" data-pane="adjust">
                             <div class="hint mb-6">
-                                调整会作用在成品尺寸上，预览与最终生成的投影完全一致。
+                                调整作用在成品尺寸上，预览与最终生成的投影完全一致。
                             </div>
+
+                            <div class="adj-group">基础</div>
                             <div class="adj-row">
                                 <div class="adj-top">
                                     <span>曝光</span><span class="adj-val" id="adj-exposure-v">0</span>
                                 </div>
-                                <input type="range" id="adj-exposure" min="-100" max="100" value="0"
-                                       title="整体明暗，按档位放大（±1.5 档）">
+                                <input type="range" id="adj-exposure" min="-100" max="100" value="0" title="整体明暗，按档位放大（±1.5 档）">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>对比</span><span class="adj-val" id="adj-contrast-v">0</span>
+                                </div>
+                                <input type="range" id="adj-contrast" min="-100" max="100" value="0" title="以中灰为轴拉开 / 压缩层次">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>饱和</span><span class="adj-val" id="adj-saturation-v">0</span>
+                                </div>
+                                <input type="range" id="adj-saturation" min="-100" max="100" value="0" title="负值偏灰、正值更艳">
                             </div>
                             <div class="adj-row">
                                 <div class="adj-top">
                                     <span>亮度</span><span class="adj-val" id="adj-brightness-v">0</span>
                                 </div>
-                                <input type="range" id="adj-brightness" min="-100" max="100" value="0"
-                                       title="直接加减亮度">
+                                <input type="range" id="adj-brightness" min="-100" max="100" value="0" title="整体加减亮度">
+                            </div>
+
+                            <div class="adj-group">影调</div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>高光</span><span class="adj-val" id="adj-highlights-v">0</span>
+                                </div>
+                                <input type="range" id="adj-highlights" min="-100" max="100" value="0" title="只影响亮部，负值压回高光">
                             </div>
                             <div class="adj-row">
                                 <div class="adj-top">
-                                    <span>对比度</span><span class="adj-val" id="adj-contrast-v">0</span>
+                                    <span>暗部</span><span class="adj-val" id="adj-shadows-v">0</span>
                                 </div>
-                                <input type="range" id="adj-contrast" min="-100" max="100" value="0"
-                                       title="以中灰为轴拉开/压缩层次">
+                                <input type="range" id="adj-shadows" min="-100" max="100" value="0" title="只影响暗部，正值提亮阴影">
                             </div>
+
+                            <div class="adj-group">颜色</div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>色温</span><span class="adj-val" id="adj-temperature-v">0</span>
+                                </div>
+                                <input type="range" id="adj-temperature" min="-100" max="100" value="0" title="负值偏冷（蓝）、正值偏暖（黄）">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>色调</span><span class="adj-val" id="adj-tint-v">0</span>
+                                </div>
+                                <input type="range" id="adj-tint" min="-100" max="100" value="0" title="负值偏品红、正值偏绿">
+                            </div>
+
+                            <div class="adj-group">细节</div>
                             <div class="adj-row">
                                 <div class="adj-top">
                                     <span>锐化</span><span class="adj-val" id="adj-sharpen-v">0</span>
                                 </div>
-                                <input type="range" id="adj-sharpen" min="0" max="100" value="0"
-                                       title="USM 锐化，让边缘更清晰">
+                                <input type="range" id="adj-sharpen" min="0" max="100" value="0" title="USM 锐化，让边缘更清晰">
                             </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>清晰</span><span class="adj-val" id="adj-clarity-v">0</span>
+                                </div>
+                                <input type="range" id="adj-clarity" min="0" max="100" value="0" title="中频局部对比，增强质感">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>色散</span><span class="adj-val" id="adj-dispersion-v">0</span>
+                                </div>
+                                <input type="range" id="adj-dispersion" min="-100" max="100" value="0" title="镜头色差：边缘出现红蓝分离">
+                            </div>
+
+                            <div class="adj-group">效果</div>
                             <div class="adj-row">
                                 <div class="adj-top">
                                     <span>暗角</span><span class="adj-val" id="adj-vignette-v">0</span>
                                 </div>
-                                <input type="range" id="adj-vignette" min="0" max="100" value="0"
-                                       title="四角压暗，突出画面中心">
+                                <input type="range" id="adj-vignette" min="0" max="100" value="0" title="四角压暗，突出画面中心">
                             </div>
-                            <button class="btn-small btn-block" id="adj-reset" style="margin-top:10px">
+
+                            <button class="btn-small btn-block" id="adj-reset" style="margin-top:12px">
                                 恢复默认
-                            </button>
-                        </div>
+                            </button>                        </div>
 
                     </div>
                 </aside>
@@ -1527,10 +1561,23 @@
                         </div>
                     </div>
 
+                    <!-- 导出前的全尺寸最终效果预览 -->
+                    <div class="section" id="mp-final-sec" hidden>
+                        <label class="s-label">最终效果预览（全尺寸，点击放大）</label>
+                        <div class="preview-box final-box" id="mp-final-box">
+                            <div class="placeholder">生成后在这里显示</div>
+                            <span class="zoom-hint">点击放大</span>
+                        </div>
+                        <div class="s-hint" id="mp-final-hint">
+                            这是按真实方块数量 1:1 渲染的结果，放大后可逐个确认方块分布。
+                        </div>
+                    </div>
+
                     <div class="section" id="mp-save-sec" hidden>
                         <button class="btn-success btn-block" id="mp-save">
                             ⬇ 保存生成的地图画文件
                         </button>
+                        <div class="hint mt-8" style="text-align:center" id="mp-save-name"></div>
                     </div>
 
                     <!-- 方块用量统计 -->
@@ -1554,7 +1601,6 @@
                 <!-- ================= 右侧边栏：设置 ================= -->
                 <aside class="sidebar sidebar-right">
                     <div class="sb-head">
-                        <button class="sb-collapse" id="sb-right-hide" title="收起侧边栏">&#9656;</button>
                         <span class="sb-title">设置</span>
                     </div>
                     <div class="sb-body">
@@ -1593,10 +1639,6 @@
                                 <option value="384">384 px</option>
                                 <option value="512">512 px</option>
                             </select>
-                        </div>
-                        <div class="set-row">
-                            <span>侧边栏默认展开</span>
-                            <button class="switch on" id="set-sidebars"></button>
                         </div>
 
                         <div class="set-group">配置</div>
@@ -2007,7 +2049,20 @@
             resultName: "mapart.litematic",
             previewSeq: 0, previewTimer: null,
             lastPreviewSrc: "", lastOriginalSrc: "",
+            finalUrl: "",
         };
+
+        /** 由输入的图片名推出默认输出名：photo.png -> photo.litematic */
+        function defaultOutName(fileName) {
+            if (!fileName) return "mapart.litematic";
+            let base = String(fileName).split(/[\\/]/).pop();
+            base = base.replace(/\.litematic$/i, "");
+            if (!/\.litematic$/i.test(base)) base = base.replace(/\.[^.]+$/, "");
+            base = base.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim().replace(/^\.+|\s+$/g, "");
+            if (!base) return "mapart.litematic";
+            if (base.length > 80) base = base.slice(0, 80);
+            return base + ".litematic";
+        }
 
         bindDropZone("mp-drop", "mp-file", async (f) => {
             if (!f.type.startsWith("image/")) {
@@ -2187,11 +2242,15 @@
             MP.busy = true;
             syncGenerateBtn();
             $("mp-save-sec").hidden = true;
+            $("mp-final-sec").hidden = true;
             MP.resultBlob = null;
+            clearFinalImage();
             const logEl = $("mp-log");
             logEl.textContent = "正在启动生成任务…";
             setStatus("生成中…");
             setBadge("处理中", "running");
+
+            const outName = defaultOutName(MP.file && MP.file.name);
 
             const payload = {
                 sid: MP.sid,
@@ -2203,6 +2262,7 @@
                 algo: $("mp-algo").value,
                 dither: $("mp-dither").value,
                 strength: parseInt($("mp-strength").value, 10) || 0,
+                filename: outName,
                 ...(PAL.loaded ? { blocks: [...PAL.selected] } : {}),
                 ...(adjActive() ? { adjust: ADJ } : {}),
             };
@@ -2232,10 +2292,13 @@
                         const dres = await fetch(`/api/download/${MP.taskId}`);
                         if (dres.ok) {
                             MP.resultBlob = await dres.blob();
-                            MP.resultName = "mapart.litematic";
+                            // 文件名默认跟输入图片一致（后端已按同一规则清洗过）
+                            MP.resultName = r.filename || outName;
+                            $("mp-save-name").textContent = "文件名：" + MP.resultName;
                             $("mp-save-sec").hidden = false;
                         }
                     } catch (e) { console.error(e); }
+                    if (r.has_image) await showFinalImage(MP.taskId, r);
                 });
             } catch (e) {
                 MP.busy = false;
@@ -2254,6 +2317,44 @@
             }
         });
 
+        // ---- 导出前的全尺寸最终效果预览 ----
+        function clearFinalImage() {
+            if (MP.finalUrl) {
+                URL.revokeObjectURL(MP.finalUrl);
+                MP.finalUrl = "";
+            }
+            $("mp-final-sec").hidden = true;
+            $("mp-final-box").innerHTML =
+                '<div class="placeholder">生成后在这里显示</div>' +
+                '<span class="zoom-hint">点击放大</span>';
+        }
+
+        async function showFinalImage(taskId, r) {
+            try {
+                const res = await fetch(`/api/result-image/${taskId}`, { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const blob = await res.blob();
+                if (MP.finalUrl) URL.revokeObjectURL(MP.finalUrl);
+                MP.finalUrl = URL.createObjectURL(blob);
+
+                const box = $("mp-final-box");
+                box.innerHTML =
+                    `<img class="zoomable" src="${MP.finalUrl}" alt="最终效果"
+                          title="点击放大">
+                     <div class="pal-meta">${r.width} × ${r.height} 方块 · 1:1 全尺寸</div>
+                     <span class="zoom-hint">点击放大</span>`;
+                box.querySelector("img").addEventListener("click", () => {
+                    if (MP.finalUrl) openModal(MP.finalUrl);
+                });
+                $("mp-final-sec").hidden = false;
+                $("mp-final-hint").textContent =
+                    `按真实方块数量 1:1 渲染（${r.width}×${r.height}），`
+                    + `用到 ${(r.counts || []).length} 种方块。点击图片放大后可逐个确认方块分布。`;
+            } catch (e) {
+                console.warn("最终效果预览加载失败：", e);
+            }
+        }
+
         // ============================================================
         // 配置持久化（自动记住上次用的设置）
         // ============================================================
@@ -2266,7 +2367,6 @@
             hex: true,
             iconPx: 16,
             previewSide: 384,
-            sidebarsOpen: true,
             blocks: null,           // null = 用服务端默认
             adjust: {},             // 曝光/亮度/...
             form: {},               // 算法/抖动/尺寸等表单
@@ -2282,7 +2382,7 @@
                 if (typeof o.persist === "boolean") CFG.persist = o.persist;
                 if (!CFG.persist) return;       // 关掉记忆就不再恢复
                 ["theme", "icons", "hex", "iconPx", "previewSide",
-                    "sidebarsOpen", "blocks", "adjust", "form"].forEach(k => {
+                    "blocks", "adjust", "form"].forEach(k => {
                         if (o[k] !== undefined && o[k] !== null) CFG[k] = o[k];
                     });
             } catch (e) { /* 配置损坏就当没有 */ }
@@ -2304,32 +2404,6 @@
         function cfgReset() {
             try { localStorage.removeItem(CFG_KEY); } catch (e) { }
         }
-
-        // ============================================================
-        // 侧边栏：折叠 / 展开 / 页签
-        // ============================================================
-        const SB = { leftOpen: true, rightOpen: true };
-
-        function sbApply() {
-            const ws = $("mp-workspace");
-            ws.classList.toggle("no-left", !SB.leftOpen);
-            ws.classList.toggle("no-right", !SB.rightOpen);
-            $("rail-left").hidden = SB.leftOpen;
-            $("rail-right").hidden = SB.rightOpen;
-        }
-
-        function sbSet(left, right) {
-            SB.leftOpen = left;
-            SB.rightOpen = right;
-            CFG.sidebarsOpen = left && right;
-            sbApply();
-            cfgSave();
-        }
-
-        $("sb-left-hide").addEventListener("click", () => sbSet(false, SB.rightOpen));
-        $("sb-right-hide").addEventListener("click", () => sbSet(SB.leftOpen, false));
-        $("rail-left").addEventListener("click", () => sbSet(true, SB.rightOpen));
-        $("rail-right").addEventListener("click", () => sbSet(SB.leftOpen, true));
 
         document.querySelectorAll(".sb-tab").forEach(tab => {
             tab.addEventListener("click", () => {
@@ -2360,8 +2434,12 @@
         // ============================================================
         // 图片调整（左侧边栏）
         // ============================================================
-        const ADJ_KEYS = ["exposure", "brightness", "contrast", "sharpen", "vignette"];
-        const ADJ = { exposure: 0, brightness: 0, contrast: 0, sharpen: 0, vignette: 0 };
+        const ADJ_KEYS = ["exposure", "contrast", "saturation", "brightness",
+            "highlights", "shadows", "temperature", "tint",
+            "sharpen", "clarity", "dispersion", "vignette"];
+        const ADJ_UNIPOLAR = ["sharpen", "clarity", "vignette"];
+        const ADJ = {};
+        ADJ_KEYS.forEach(k => ADJ[k] = 0);
 
         function adjActive() {
             return ADJ_KEYS.some(k => ADJ[k] !== 0);
@@ -2378,7 +2456,7 @@
 
         function adjSet(key, val) {
             ADJ[key] = Math.max(-100, Math.min(100, parseInt(val, 10) || 0));
-            if ((key === "sharpen" || key === "vignette") && ADJ[key] < 0) ADJ[key] = 0;
+            if (ADJ_UNIPOLAR.includes(key) && ADJ[key] < 0) ADJ[key] = 0;
             adjSyncLabels();
             CFG.adjust = Object.assign({}, ADJ);
             cfgSave();
@@ -2598,6 +2676,12 @@
                 const ic = data.icon || {};
                 if (ic.cols) document.documentElement.style.setProperty("--icon-cols", ic.cols);
                 if (ic.rows) document.documentElement.style.setProperty("--icon-rows", ic.rows);
+                // 带版本号的贴图集地址：重新生成贴图集后地址会变，避免浏览器拿旧图配新坐标
+                if (ic.url) {
+                    document.documentElement.style.setProperty(
+                        "--icon-url", 'url("' + ic.url + '")');
+                }
+                checkIconSheet(ic);
 
                 // 恢复上次选择；里面已失效的方块会被剔掉
                 const saved = Array.isArray(CFG.blocks)
@@ -2615,6 +2699,25 @@
                     '<div class="pal-empty">方块表加载失败：' + e.message + '</div>';
                 syncGenerateBtn();
             }
+        }
+
+        /**
+         * 自检：实际加载到的贴图集尺寸必须等于 列数×格子 与 行数×格子。
+         * 对不上说明浏览器缓存了旧图（图标会整体错位），给出明确提示。
+         */
+        function checkIconSheet(ic) {
+            if (!ic.cols || !ic.rows || !ic.size) return;
+            const probe = new Image();
+            probe.onload = () => {
+                const wantW = ic.cols * ic.size, wantH = ic.rows * ic.size;
+                if (probe.naturalWidth === wantW && probe.naturalHeight === wantH) return;
+                const msg = `图标贴图集尺寸不符：实际 ${probe.naturalWidth}×${probe.naturalHeight}，`
+                    + `应为 ${wantW}×${wantH} —— 多半是浏览器缓存了旧图，请按 Ctrl+F5 强制刷新`;
+                console.warn(msg);
+                setStatus(msg);
+                setBadge("图标需强刷", "err");
+            };
+            probe.src = ic.url || "/api/icons.png";
         }
 
         // ============================================================
@@ -2720,9 +2823,6 @@
         bindSwitch("set-icons", "icons", () => { applyDisplayOpts(); });
         bindSwitch("set-hex", "hex", () => { applyDisplayOpts(); });
         bindSwitch("set-persist", "persist", () => { setInfo(); cfgSave(true); });
-        bindSwitch("set-sidebars", "sidebarsOpen", (on) => {
-            sbSet(on, on);
-        });
 
         $("set-reset").addEventListener("click", () => {
             if (!confirm("恢复默认配置？方块选择、图片调整和所有设置都会重置。")) return;
@@ -2760,19 +2860,7 @@
             switchSet($("set-icons"), CFG.icons);
             switchSet($("set-hex"), CFG.hex);
             switchSet($("set-persist"), CFG.persist);
-            switchSet($("set-sidebars"), CFG.sidebarsOpen);
             setInfo();
-        }
-
-        function initSidebars() {
-            // 窗口窄的时候默认收起，避免中间被挤没
-            const narrow = window.innerWidth < 1280;
-            const open = CFG.sidebarsOpen && !narrow;
-            SB.leftOpen = open;
-            SB.rightOpen = open;
-            $("rail-left").hidden = open;
-            $("rail-right").hidden = open;
-            sbApply();
         }
 
         // ============================================================
@@ -2971,7 +3059,6 @@
         applyTheme();
         formApply(CFG.form);
         onSizeModeChange();
-        initSidebars();
 
         ADJ_KEYS.forEach(k => {
             if (CFG.adjust && typeof CFG.adjust[k] === "number") {
