@@ -315,17 +315,27 @@ def rgb_to_lab(r, g, b):
 class Palette:
     """一次请求实际使用的调色板：只包含被启用的颜色组。"""
 
-    __slots__ = ("groups", "hexes", "rgb", "r", "g", "b", "lab", "n")
+    __slots__ = ("groups", "hexes", "rgb", "rgb_list", "r", "g", "b",
+                 "lab", "lab_l", "lab_a", "lab_b", "lab_c",
+                 "n")
 
     def __init__(self, groups):
         self.groups = groups
         self.hexes = [g["hex"] for g in groups]
         self.rgb = np.array([g["rgb"] for g in groups],
                             dtype=np.float32).reshape(-1, 3)
+        # 误差扩散的内层循环要反复取色，list of tuple 比 numpy 快得多
+        self.rgb_list = self.rgb.tolist()
         self.r = self.rgb[:, 0].astype(np.int32)
         self.g = self.rgb[:, 1].astype(np.int32)
         self.b = self.rgb[:, 2].astype(np.int32)
         self.lab = [rgb_to_lab(*g["rgb"]) for g in groups]
+        # Lab 的各个分量摊平成 numpy 数组，CIE 系列匹配就能整批算
+        labs = np.array(self.lab, dtype=np.float64).reshape(-1, 3)
+        self.lab_l = labs[:, 0]
+        self.lab_a = labs[:, 1]
+        self.lab_b = labs[:, 2]
+        self.lab_c = np.hypot(self.lab_a, self.lab_b)
         self.n = len(groups)
 
 
@@ -371,6 +381,41 @@ def make_palette(selected_ids):
 # ============================================================
 # 颜色匹配算法
 # ============================================================
+# 这组函数在误差扩散里会被调用几十万次，所以做了两层提速：
+#
+#   1. euclidean / weighted 的距离可以按通道拆开：
+#          d = f(r) + g(g) + h(b)
+#      于是预计算三张 256×N 的表，每次匹配只剩「两次数组加法 + argmin」。
+#
+#   2. cie76 / cie94 / ciede2000 原来是对着调色板一条条 Python 循环，
+#      现在改成把整张调色板一次性丢进 numpy 算。公式一字未改，
+#      只是从「59 次 Python 循环」变成「一次数组运算」。
+#
+# 批量接口 match_batch(rgbs) 则把「每个像素各自算一次」改成「一批像素一起算」，
+# 无抖动 / Bayer 这类不依赖前序结果的路径可以直接整批处理。
+
+def _make_dist_tables(algo_key, pal):
+    """
+    euclidean / weighted 的距离可以拆成三个通道各自贡献，返回 (TR, TG, TB)，
+    每张都是 256×N 的表：TR[v, i] 表示该通道取值 v 对上第 i 个颜色的代价。
+    其它算法返回 None。
+
+    精度上必须和原来的写法对齐，否则临界情况下会选到相邻的另一个颜色：
+    原式是 (r - pal.r) 用整数通道相减（精确），再乘系数（float64）。
+    所以这里也用整数通道 + float64，并且加法顺序保持 ((TR+TG)+TB)。
+    """
+    if algo_key not in ("euclidean", "weighted"):
+        return None
+    v = np.arange(256, dtype=np.float64)
+    # 用 int32 通道值转 float64：v - pr 对 0..255 的整数是精确的
+    dr = v[:, None] - pal.r.astype(np.float64)[None, :]
+    dg = v[:, None] - pal.g.astype(np.float64)[None, :]
+    db = v[:, None] - pal.b.astype(np.float64)[None, :]
+    if algo_key == "euclidean":
+        return dr * dr, dg * dg, db * db
+    return 0.30 * dr * dr, 0.59 * dg * dg, 0.11 * db * db
+
+
 def _match_euclidean(r, g, b, pal):
     d = (r - pal.r)**2 + (g - pal.g)**2 + (b - pal.b)**2
     return int(d.argmin())
@@ -389,73 +434,73 @@ def _match_redmean(r, g, b, pal):
 
 
 def _match_cie76(L, a, b, pal):
-    best, bd = 0, 1e30
-    for i, (pl, pa, pb) in enumerate(pal.lab):
-        dL = L - pl; da = a - pa; db = b - pb
-        d = dL*dL + da*da + db*db
-        if d < bd: bd, best = d, i
-    return best
+    dL = L - pal.lab_l
+    da = a - pal.lab_a
+    db = b - pal.lab_b
+    return int((dL*dL + da*da + db*db).argmin())
 
 
 def _match_cie94(L, a, b, pal):
-    best, bd = 0, 1e30
     C1 = math.hypot(a, b)
-    for i, (pl, pa, pb) in enumerate(pal.lab):
-        C2 = math.hypot(pa, pb)
-        dL = L - pl; dC = C1 - C2
-        da = a - pa; db = b - pb
-        dH2 = max(0, da*da + db*db - dC*dC)
-        SC = 1 + 0.045*C1; SH = 1 + 0.015*C1
-        d = dL*dL + (dC/SC)**2 + dH2/(SH*SH)
-        if d < bd: bd, best = d, i
-    return best
+    dL = L - pal.lab_l
+    dC = C1 - pal.lab_c
+    da = a - pal.lab_a
+    db = b - pal.lab_b
+    dH2 = np.maximum(0.0, da*da + db*db - dC*dC)
+    SC = 1 + 0.045*C1
+    SH = 1 + 0.015*C1
+    d = dL*dL + (dC/SC)**2 + dH2/(SH*SH)
+    return int(d.argmin())
+
+
+def _ciede2000_dist(L1, a1, b1, pal):
+    """CIEDE2000：L1/a1/b1 可以是标量也可以是数组，返回与调色板同形的距离数组。"""
+    C1 = np.hypot(a1, b1)
+    C1_7 = C1 ** 7
+    L2, a2, b2 = pal.lab_l, pal.lab_a, pal.lab_b
+    C2 = pal.lab_c
+    C2_7 = C2 ** 7
+    Cbar = (C1 + C2) * 0.5
+    Cbar_7 = Cbar ** 7
+    G = 0.5 * (1 - np.sqrt(Cbar_7 / (Cbar_7 + 25**7)))
+    a1p = a1 * (1 + G)
+    a2p = a2 * (1 + G)
+    C1p = np.hypot(a1p, b1)
+    C2p = np.hypot(a2p, b2)
+    h1p = np.degrees(np.arctan2(b1, a1p)) % 360
+    h2p = np.degrees(np.arctan2(b2, a2p)) % 360
+    dLp = L2 - L1
+    dCp = C2p - C1p
+
+    dh = h2p - h1p
+    dhp = np.where(np.abs(dh) <= 180, dh,
+                   np.where(dh > 180, dh - 360, dh + 360))
+    dHp = 2 * np.sqrt(C1p * C2p) * np.sin(np.radians(dhp) * 0.5)
+
+    Lbarp = (L1 + L2) * 0.5
+    Cbarp = (C1p + C2p) * 0.5
+    hsum = h1p + h2p
+    hbarp = np.where(C1p * C2p == 0, h1p + h2p,
+                     np.where(np.abs(h1p - h2p) <= 180, hsum * 0.5,
+                              np.where(hsum < 360, (hsum + 360) * 0.5,
+                                       (hsum - 360) * 0.5)))
+
+    T = (1 - 0.17 * np.cos(np.radians(hbarp - 30))
+         + 0.24 * np.cos(np.radians(2 * hbarp))
+         + 0.32 * np.cos(np.radians(3 * hbarp + 6))
+         - 0.20 * np.cos(np.radians(4 * hbarp - 63)))
+    dTheta = 30 * np.exp(-(((hbarp - 275) / 25) ** 2))
+    Cbarp_7 = Cbarp ** 7
+    RC = 2 * np.sqrt(Cbarp_7 / (Cbarp_7 + 25**7))
+    SL = 1 + (0.015 * (Lbarp - 50)**2) / np.sqrt(20 + (Lbarp - 50)**2)
+    SC = 1 + 0.045 * Cbarp
+    SH = 1 + 0.015 * Cbarp * T
+    RT = -np.sin(np.radians(2 * dTheta)) * RC
+    return (dLp/SL)**2 + (dCp/SC)**2 + (dHp/SH)**2 + RT*(dCp/SC)*(dHp/SH)
 
 
 def _match_ciede2000(L1, a1, b1, pal):
-    best, bd = 0, 1e30
-    C1 = math.hypot(a1, b1)
-    C1_7 = C1 ** 7
-    for i, (L2, a2, b2) in enumerate(pal.lab):
-        C2 = math.hypot(a2, b2)
-        C2_7 = C2 ** 7
-        Cbar = (C1 + C2) * 0.5
-        Cbar_7 = Cbar ** 7
-        G = 0.5 * (1 - math.sqrt(Cbar_7 / (Cbar_7 + 25**7)))
-        a1p = a1 * (1 + G); a2p = a2 * (1 + G)
-        C1p = math.hypot(a1p, b1); C2p = math.hypot(a2p, b2)
-        h1p = math.degrees(math.atan2(b1, a1p)) % 360
-        h2p = math.degrees(math.atan2(b2, a2p)) % 360
-        dLp = L2 - L1; dCp = C2p - C1p
-        if C1p * C2p == 0:
-            dhp = 0.0
-        else:
-            dh = h2p - h1p
-            if abs(dh) <= 180: dhp = dh
-            elif dh > 180: dhp = dh - 360
-            else: dhp = dh + 360
-        dHp = 2 * math.sqrt(C1p * C2p) * math.sin(math.radians(dhp) * 0.5)
-        Lbarp = (L1 + L2) * 0.5; Cbarp = (C1p + C2p) * 0.5
-        if C1p * C2p == 0:
-            hbarp = h1p + h2p
-        else:
-            hsum = h1p + h2p
-            if abs(h1p - h2p) <= 180: hbarp = hsum * 0.5
-            elif hsum < 360: hbarp = (hsum + 360) * 0.5
-            else: hbarp = (hsum - 360) * 0.5
-        T = (1 - 0.17*math.cos(math.radians(hbarp - 30))
-             + 0.24*math.cos(math.radians(2*hbarp))
-             + 0.32*math.cos(math.radians(3*hbarp + 6))
-             - 0.20*math.cos(math.radians(4*hbarp - 63)))
-        dTheta = 30 * math.exp(-(((hbarp - 275) / 25) ** 2))
-        Cbarp_7 = Cbarp ** 7
-        RC = 2 * math.sqrt(Cbarp_7 / (Cbarp_7 + 25**7))
-        SL = 1 + (0.015 * (Lbarp - 50)**2) / math.sqrt(20 + (Lbarp - 50)**2)
-        SC = 1 + 0.045 * Cbarp
-        SH = 1 + 0.015 * Cbarp * T
-        RT = -math.sin(math.radians(2 * dTheta)) * RC
-        d = (dLp/SL)**2 + (dCp/SC)**2 + (dHp/SH)**2 + RT*(dCp/SC)*(dHp/SH)
-        if d < bd: bd, best = d, i
-    return best
+    return int(_ciede2000_dist(L1, a1, b1, pal).argmin())
 
 
 def get_matcher(algo, pal):
@@ -471,6 +516,81 @@ def get_matcher(algo, pal):
         return lambda r, g, b: _match_ciede2000(*rgb_to_lab(r, g, b), pal)
     return lambda r, g, b: _match_weighted(r, g, b, pal)
 
+
+# ------------------------------------------------------------
+# 批量匹配：一次算一批像素，而不是一个像素一次
+# ------------------------------------------------------------
+BATCH_CHUNK = 8192          # 每批像素数，控制内存占用
+
+
+def _rgb_to_lab_batch(rgb):
+    """(P,3) uint8/float 数组 -> (L, a, b) 三个 float64 数组。"""
+    c = np.asarray(rgb, dtype=np.float64) / 255.0
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = lin[:, 0], lin[:, 1], lin[:, 2]
+    x = (r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047
+    y = (r * 0.2126729 + g * 0.7151522 + b * 0.0721750) / 1.00000
+    z = (r * 0.0193339 + g * 0.1191920 + b * 0.9503041) / 1.08883
+
+    def f(t):
+        return np.where(t > 0.008856, np.cbrt(t), 7.787 * t + 16.0 / 116.0)
+
+    fx, fy, fz = f(x), f(y), f(z)
+    return 116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)
+
+
+def match_batch(rgb_int, pal, algo_key, tables=None):
+    """
+    rgb_int: (P,3) 的整数数组（0..255），返回 (P,) 调色板下标。
+    整批用 numpy 算，比逐像素调用快一个数量级。
+    """
+    c = np.asarray(rgb_int, dtype=np.int32)
+    P = c.shape[0]
+    out = np.empty(P, dtype=np.int32)
+    if P == 0:
+        return out
+
+    for s in range(0, P, BATCH_CHUNK):
+        e = min(s + BATCH_CHUNK, P)
+        blk = c[s:e]
+        if tables is not None:
+            TR, TG, TB = tables
+            d = TR[blk[:, 0]] + TG[blk[:, 1]] + TB[blk[:, 2]]
+        elif algo_key == "redmean":
+            # 与原式一致：整数相减 -> 再转 float64 参与乘除
+            rf = blk[:, 0].astype(np.float64)[:, None]
+            gf = blk[:, 1].astype(np.float64)[:, None]
+            bf = blk[:, 2].astype(np.float64)[:, None]
+            pi_r = pal.r.astype(np.float64)[None, :]
+            pi_g = pal.g.astype(np.float64)[None, :]
+            pi_b = pal.b.astype(np.float64)[None, :]
+            rmean = (rf + pi_r) * 0.5
+            dr = rf - pi_r
+            dg = gf - pi_g
+            db = bf - pi_b
+            d = ((2 + rmean / 256) * dr * dr + 4 * dg * dg
+                 + (2 + (255 - rmean) / 256) * db * db)
+        else:
+            L, a, b = _rgb_to_lab_batch(blk)
+            if algo_key == "cie76":
+                dL = L[:, None] - pal.lab_l[None, :]
+                da = a[:, None] - pal.lab_a[None, :]
+                db = b[:, None] - pal.lab_b[None, :]
+                d = dL * dL + da * da + db * db
+            elif algo_key == "cie94":
+                C1 = np.hypot(a, b)[:, None]
+                dL = L[:, None] - pal.lab_l[None, :]
+                dC = C1 - pal.lab_c[None, :]
+                da = a[:, None] - pal.lab_a[None, :]
+                db = b[:, None] - pal.lab_b[None, :]
+                dH2 = np.maximum(0.0, da * da + db * db - dC * dC)
+                SC = 1 + 0.045 * C1
+                SH = 1 + 0.015 * C1
+                d = dL * dL + (dC / SC) ** 2 + dH2 / (SH * SH)
+            else:                                    # ciede2000
+                d = _ciede2000_dist(L[:, None], a[:, None], b[:, None], pal)
+        out[s:e] = d.argmin(axis=1)
+    return out
 
 
 ALGO_LABELS = {
@@ -529,89 +649,126 @@ BAYER_8 = _make_bayer(8)
 # ============================================================
 # 图像处理
 # ============================================================
-def process_image(img, algo_key, dither_key, strength, pal):
-    W, H = img.size
-    matcher = get_matcher(algo_key, pal)
+def _diffuse_flat(buf, H, W, pal, kernel, strength, tables, matcher, cache):
+    """
+    误差扩散：逐像素回头修改后面的像素，所以没法整批并行。
+    这里把能省的都省掉：
+      · 工作缓冲摊成一维 Python 列表 —— 标量读写比 numpy 下标快得多
+      · 四周留 2 圈空白，核的偏移量事先算好，内层循环不再判断越界
+      · 调色板颜色用 list of tuple 取，避免 numpy 标量装箱
+    """
+    PAD = 2
+    PW = W + 2 * PAD
+    PH = H + 2 * PAD
+    pad = np.zeros((PH, PW, 3), dtype=np.float32)
+    pad[PAD:PAD + H, PAD:PAD + W, :] = buf
+    work = pad.reshape(-1).tolist()
 
-    if dither_key == "none":
-        arr = np.array(img, dtype=np.uint8)
-        flat = arr.reshape(-1, 3)
-        if algo_key in ("euclidean", "weighted", "redmean"):
-            chunk = 1 << 15
-            out = np.empty(flat.shape[0], dtype=np.int32)
-            for s in range(0, flat.shape[0], chunk):
-                e = min(s + chunk, flat.shape[0])
-                f = flat[s:e].astype(np.float32)
-                diff = f[:, None, :] - pal.rgb[None, :, :]
-                if algo_key == "euclidean":
-                    d = (diff * diff).sum(axis=-1)
-                elif algo_key == "weighted":
-                    wgt = np.array([0.30, 0.59, 0.11], dtype=np.float32)
-                    d = (diff * diff * wgt[None, None, :]).sum(axis=-1)
-                else:
-                    rmean = (f[:, None, 0] + pal.rgb[None, :, 0]) * 0.5
-                    d = ((2 + rmean/256)*diff[:,:,0]**2
-                         + 4*diff[:,:,1]**2
-                         + (2 + (255-rmean)/256)*diff[:,:,2]**2)
-                out[s:e] = d.argmin(axis=1)
-            idx = out.reshape(H, W)
-        else:
-            src = arr.reshape(-1, 3)
-            out = np.empty(src.shape[0], dtype=np.int32)
-            cache = {}
-            for i in range(src.shape[0]):
-                key = (int(src[i, 0]), int(src[i, 1]), int(src[i, 2]))
-                v = cache.get(key)
-                if v is None:
-                    v = matcher(*key); cache[key] = v
-                out[i] = v
-            idx = out.reshape(H, W)
-        return idx, pal.rgb[idx].astype(np.uint8)
+    taps = [((dy * PW + dx) * 3, k) for dx, dy, k in kernel]
+    colors = pal.rgb_list
+    out = [0] * (H * W)
+    npix = 0
+    TR = TG = TB = None
+    if tables is not None:
+        TR, TG, TB = tables
 
-    buf = np.array(img, dtype=np.float32)
+    get = cache.get
+    row_start = ((PAD) * PW + PAD) * 3
+    stride = PW * 3
 
-    if dither_key in ("bayer4", "bayer8"):
-        matrix = BAYER_4 if dither_key == "bayer4" else BAYER_8
-        bh, bw = matrix.shape
-        tile = np.tile(matrix, (H // bh + 1, W // bw + 1))[:H, :W]
-        thresh = (tile / (bh * bw)) - 0.5
-        buf = np.clip(buf + thresh[:,:,None] * (strength * 64.0), 0, 255)
-        src = buf.reshape(-1, 3).astype(np.int32)
-        out = np.empty(src.shape[0], dtype=np.int32)
-        cache = {}
-        for i in range(src.shape[0]):
-            key = (int(src[i, 0]), int(src[i, 1]), int(src[i, 2]))
-            v = cache.get(key)
-            if v is None:
-                v = matcher(*key); cache[key] = v
-            out[i] = v
-        idx = out.reshape(H, W)
-        return idx, pal.rgb[idx].astype(np.uint8)
-
-    kernel = DIFFUSION_KERNELS[dither_key]
-    idx = np.zeros((H, W), dtype=np.int32)
-    cache = {}
     for y in range(H):
-        for x in range(W):
-            r = buf[y, x, 0]; g = buf[y, x, 1]; b = buf[y, x, 2]
-            rc = int(min(255, max(0, r + 0.5)))
-            gc = int(min(255, max(0, g + 0.5)))
-            bc = int(min(255, max(0, b + 0.5)))
+        i = row_start + y * stride
+        for _ in range(W):
+            r = work[i]
+            g = work[i + 1]
+            b = work[i + 2]
+            rc = int(r + 0.5)
+            if rc < 0: rc = 0
+            elif rc > 255: rc = 255
+            gc = int(g + 0.5)
+            if gc < 0: gc = 0
+            elif gc > 255: gc = 255
+            bc = int(b + 0.5)
+            if bc < 0: bc = 0
+            elif bc > 255: bc = 255
+
             key = (rc, gc, bc)
-            pi = cache.get(key)
+            pi = get(key)
             if pi is None:
-                pi = matcher(rc, gc, bc); cache[key] = pi
-            idx[y, x] = pi
-            pr, pg, pb = pal.rgb[pi]
+                if TR is not None:
+                    pi = int((TR[rc] + TG[gc] + TB[bc]).argmin())
+                else:
+                    pi = matcher(rc, gc, bc)
+                cache[key] = pi
+
+            out[npix] = pi
+            npix += 1
+
+            pr, pg, pb = colors[pi]
             er = (r - pr) * strength
             eg = (g - pg) * strength
             eb = (b - pb) * strength
-            for dx, dy, k in kernel:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < W and 0 <= ny < H:
-                    buf[ny, nx, 0] += er * k
-                    buf[ny, nx, 1] += eg * k
-                    buf[ny, nx, 2] += eb * k
+            for off, k in taps:
+                m = i + off
+                work[m] += er * k
+                work[m + 1] += eg * k
+                work[m + 2] += eb * k
+            i += 3
+
+    return np.array(out, dtype=np.int32).reshape(H, W)
+
+
+def _match_unique(rgb_int, pal, algo_key, tables):
+    """
+    先去重再整批匹配，最后映射回去。
+    照片这类颜色重复度高的图，去重后要算的次数能少一个数量级；
+    CIE 系列尤其吃这个。
+    """
+    uniq, inv = np.unique(np.ascontiguousarray(rgb_int), axis=0,
+                          return_inverse=True)
+    uniq_idx = match_batch(uniq, pal, algo_key, tables)
+    return uniq_idx[inv.reshape(-1)]
+
+
+def process_image(img, algo_key, dither_key, strength, pal):
+    W, H = img.size
+    tables = _make_dist_tables(algo_key, pal)
+    matcher = get_matcher(algo_key, pal)
+
+    # ---------------- 无抖动 ----------------
+    if dither_key == "none":
+        arr = np.array(img, dtype=np.uint8)
+        flat = arr.reshape(-1, 3).astype(np.int32)
+        if tables is not None:
+            # 可分离算法直接整批算，不需要去重（本来就很快）
+            idx = match_batch(flat, pal, algo_key, tables)
+        else:
+            idx = _match_unique(flat, pal, algo_key, tables)
+        idx = idx.reshape(H, W)
+        return idx, pal.rgb[idx].astype(np.uint8)
+
+    # ---------------- Bayer 阈值抖动 ----------------
+    if dither_key in ("bayer4", "bayer8"):
+        matrix = BAYER_4 if dither_key == "bayer4" else BAYER_8
+        bh, bw = matrix.shape
+        buf = np.array(img, dtype=np.float32)
+        tile = np.tile(matrix, (H // bh + 1, W // bw + 1))[:H, :W]
+        thresh = (tile / (bh * bw)) - 0.5
+        buf = np.clip(buf + thresh[:, :, None] * (strength * 64.0), 0, 255)
+        # 这一步等价于逐像素的 int(min(255, max(0, v + 0.5)))
+        q = np.clip((buf + 0.5).astype(np.int32), 0, 255).reshape(-1, 3)
+        if tables is not None:
+            idx = match_batch(q, pal, algo_key, tables)
+        else:
+            idx = _match_unique(q, pal, algo_key, tables)
+        idx = idx.reshape(H, W)
+        return idx, pal.rgb[idx].astype(np.uint8)
+
+    # ---------------- 误差扩散 ----------------
+    buf = np.array(img, dtype=np.float32)
+    kernel = DIFFUSION_KERNELS[dither_key]
+    cache = {}
+    idx = _diffuse_flat(buf, H, W, pal, kernel, strength, tables, matcher, cache)
     return idx, pal.rgb[idx].astype(np.uint8)
 
 

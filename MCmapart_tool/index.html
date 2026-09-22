@@ -1305,6 +1305,92 @@
 
         .usage-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--faint); }
 
+        /* ---------- 自由预览（专注模式） ----------
+           开启后：除了左侧「图片调整」栏，其它界面全部隐藏；
+           预览图铺满剩余区域，可自由滚轮缩放 / 拖拽平移。 */
+        body.focus-mode { overflow: hidden; }
+
+        body.focus-mode header,
+        body.focus-mode .tabs,
+        body.focus-mode .status-bar,
+        body.focus-mode .sidebar-right,
+        body.focus-mode .usage,
+        body.focus-mode .mp-main > .section:not(#mp-preview-sec) {
+            display: none !important;
+        }
+
+        body.focus-mode .app { box-shadow: none; background: transparent; }
+
+        /* 左栏固定到视口左侧，始终在手边。
+           这里用显式高度，而不是 top+bottom 两个值 —— 后者在这里算不出高度，
+           元素会按内容高度撑开、跑到视口外面去。 */
+        body.focus-mode .sidebar-left {
+            position: fixed;
+            top: 12px;
+            bottom: auto;
+            height: calc(100vh - 24px);
+            max-height: calc(100vh - 24px);
+            left: var(--focus-left, 20px);
+            width: 312px;
+            z-index: 950;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
+        }
+
+        body.focus-mode .sidebar-left .sb-body { max-height: none; }
+
+        /* 预览区铺满左栏以外的空间 */
+        body.focus-mode #mp-preview-sec {
+            position: fixed;
+            top: 12px; bottom: 12px; right: 12px;
+            left: calc(var(--focus-left, 20px) + 324px);
+            margin: 0; padding: 0;
+            z-index: 900;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, .22);
+        }
+
+        body.focus-mode #mp-preview-sec > .s-label,
+        body.focus-mode #mp-preview-sec > .set-row,
+        body.focus-mode #mp-preview-sec > .s-hint { display: none; }
+
+        body.focus-mode .preview-row { flex: 1; min-height: 0; display: block; }
+
+        body.focus-mode .preview-box {
+            height: 100%; min-height: 0; width: 100%;
+            border: none; border-radius: 0;
+            overflow: hidden; position: relative;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        body.focus-mode .preview-box img {
+            max-width: none; max-height: none;
+            transform-origin: center center;
+            will-change: transform;
+            cursor: grab;
+            touch-action: none;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
+        }
+
+        body.focus-mode .preview-box img.grabbing { cursor: grabbing; }
+
+        body.focus-mode .preview-box .zoom-hint,
+        body.focus-mode .preview-box .pal-meta,
+        body.focus-mode .preview-box .caption { display: none; }
+
+        /* 左栏里的「复原」条 */
+        .focus-bar { padding: 0 0 10px; }
+        .focus-bar[hidden] { display: none; }
+        .focus-bar button { width: 100%; }
+        .focus-tip {
+            font-size: 11px; color: var(--muted); margin-top: 6px;
+            line-height: 1.5;
+        }
+
         /* ---------- 方块选择：按钮 + 弹出面板 ---------- */
         .pal-open {
             display: flex; flex-direction: column; align-items: flex-start;
@@ -1433,6 +1519,12 @@
                     <div class="sb-body">
 
                         <div class="sb-pane active" data-pane="adjust">
+                            <div class="focus-bar" id="focus-bar" hidden>
+                                <button class="btn-small" id="focus-restore">↺ 复原（显示原图）</button>
+                                <div class="focus-tip">
+                                    滚轮缩放 · 按住拖动 · 双击复位视图
+                                </div>
+                            </div>
                             <div class="hint mb-6">
                                 调整作用在成品尺寸上，预览与最终生成的投影完全一致。
                             </div>
@@ -1633,7 +1725,7 @@
                         </div>
                     </div>
 
-                    <div class="section">
+                    <div class="section" id="mp-preview-sec">
                         <label class="s-label">6. 实时预览（点击可放大）</label>
                         <div class="set-row" style="padding:2px 0 8px">
                             <span title="隐藏原图后预览图会自动放大，方便一边调图一边看效果">
@@ -2353,8 +2445,19 @@
                 box.classList.remove("updating");
 
                 box.querySelector("img").addEventListener("click", () => {
+                    if (focusOn()) return;          // 专注模式下点图是拖动，不弹放大框
                     if (MP.lastPreviewSrc) openModal(MP.lastPreviewSrc);
                 });
+
+                // 预览图被重绘了，把当前的缩放/位移重新贴上去，别让用户的视角丢失
+                if (focusOn()) {
+                    focusAttach();
+                    setTimeout(() => {
+                        if (!focusOn()) return;
+                        if (!FOCUS.fitted) { focusFit(); FOCUS.fitted = true; }
+                        else focusApply();
+                    }, 20);
+                }
 
                 renderUsage(data.counts, data.total_blocks,
                     data.estimated ? "预览估算" : "预览");
@@ -3487,18 +3590,199 @@
         $("pal-alloc").value = CFG.alloc || "random";
         refreshPresetSelect();
 
-        // 隐藏原图、放大预览
+        // ============================================================
+        // 自由预览（专注模式）
+        //   开启：只留左侧「图片调整」栏，其余界面隐藏；预览图可自由缩放拖动
+        //   复原：回到原样，重新显示原图
+        // ============================================================
+        const FOCUS = {
+            scale: 1, tx: 0, ty: 0,
+            dragging: false, sx: 0, sy: 0, stx: 0, sty: 0,
+            savedScroll: 0, fitted: false, attached: false,
+        };
+
+        function focusOn() {
+            return document.body.classList.contains("focus-mode");
+        }
+
+        function focusImg() {
+            const box = $("mp-preview-pal");
+            return box ? box.querySelector("img") : null;
+        }
+
+        function focusApply() {
+            const img = focusImg();
+            if (!img) return;
+            img.style.transform =
+                `translate(${FOCUS.tx}px, ${FOCUS.ty}px) scale(${FOCUS.scale})`;
+        }
+
+        function focusResetTransform() {
+            FOCUS.scale = 1; FOCUS.tx = 0; FOCUS.ty = 0;
+            FOCUS.dragging = false;
+            focusApply();
+        }
+
+        /** 让图片刚好铺满可视区域（进入专注模式时自动做一次） */
+        function focusFit() {
+            const img = focusImg(), box = $("mp-preview-pal");
+            if (!img || !box || !img.naturalWidth) return;
+            const pad = 28;
+            const aw = Math.max(40, box.clientWidth - pad);
+            const ah = Math.max(40, box.clientHeight - pad);
+            const s = Math.min(aw / img.naturalWidth, ah / img.naturalHeight);
+            FOCUS.scale = Math.max(0.05, Math.min(16, s));
+            FOCUS.tx = 0; FOCUS.ty = 0;
+            focusApply();
+        }
+
+        function focusZoomAt(factor, cx, cy) {
+            const img = focusImg();
+            if (!img) return;
+            const ns = Math.max(0.05, Math.min(16, FOCUS.scale * factor));
+            const r = img.getBoundingClientRect();
+            const dx = cx - (r.left + r.width / 2);
+            const dy = cy - (r.top + r.height / 2);
+            const k = ns / FOCUS.scale;
+            FOCUS.tx -= dx * (k - 1);
+            FOCUS.ty -= dy * (k - 1);
+            FOCUS.scale = ns;
+            focusApply();
+        }
+
+        /** 左栏宽度/位置可能随窗口变化，这里算出专注模式下左栏该贴在哪 */
+        function updateFocusLeft() {
+            const app = document.querySelector(".app");
+            if (!app) return;
+            const left = Math.max(12, Math.round(app.getBoundingClientRect().left) + 26);
+            document.documentElement.style.setProperty("--focus-left", left + "px");
+        }
+
+        /** 只在真正进入专注模式时才需要，绑一次即可（用事件委托，图片被重绘也不影响） */
+        function focusAttach() {
+            if (FOCUS.attached) return;
+            FOCUS.attached = true;
+            const box = $("mp-preview-pal");
+            if (!box) return;
+
+            box.addEventListener("wheel", (e) => {
+                if (!focusOn()) return;
+                e.preventDefault();
+                focusZoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
+            }, { passive: false });
+
+            box.addEventListener("mousedown", (e) => {
+                if (!focusOn()) return;
+                const img = focusImg();
+                if (!img || !e.target.closest("img")) return;
+                e.preventDefault();
+                FOCUS.dragging = true;
+                FOCUS.sx = e.clientX; FOCUS.sy = e.clientY;
+                FOCUS.stx = FOCUS.tx; FOCUS.sty = FOCUS.ty;
+                img.classList.add("grabbing");
+            });
+
+            window.addEventListener("mousemove", (e) => {
+                if (!FOCUS.dragging) return;
+                FOCUS.tx = FOCUS.stx + (e.clientX - FOCUS.sx);
+                FOCUS.ty = FOCUS.sty + (e.clientY - FOCUS.sy);
+                focusApply();
+            });
+
+            window.addEventListener("mouseup", () => {
+                if (!FOCUS.dragging) return;
+                FOCUS.dragging = false;
+                const img = focusImg();
+                if (img) img.classList.remove("grabbing");
+            });
+
+            // 双击复位视图
+            box.addEventListener("dblclick", (e) => {
+                if (!focusOn()) return;
+                e.preventDefault();
+                focusFit();
+            });
+
+            // 触摸拖动
+            box.addEventListener("touchstart", (e) => {
+                if (!focusOn() || e.touches.length !== 1) return;
+                const t = e.touches[0];
+                FOCUS.dragging = true;
+                FOCUS.sx = t.clientX; FOCUS.sy = t.clientY;
+                FOCUS.stx = FOCUS.tx; FOCUS.sty = FOCUS.ty;
+            }, { passive: true });
+
+            box.addEventListener("touchmove", (e) => {
+                if (!FOCUS.dragging || e.touches.length !== 1) return;
+                const t = e.touches[0];
+                FOCUS.tx = FOCUS.stx + (t.clientX - FOCUS.sx);
+                FOCUS.ty = FOCUS.sty + (t.clientY - FOCUS.sy);
+                focusApply();
+            }, { passive: true });
+
+            box.addEventListener("touchend", () => { FOCUS.dragging = false; });
+
+            window.addEventListener("resize", () => {
+                if (focusOn()) updateFocusLeft();
+            });
+        }
+
+        function focusEnter() {
+            FOCUS.savedScroll = window.scrollY || 0;
+            updateFocusLeft();
+            document.body.classList.add("focus-mode");
+            $("focus-bar").hidden = false;
+            focusAttach();
+            FOCUS.fitted = false;
+            // 用定时器而不是 requestAnimationFrame：无头浏览器里 rAF 可能完全不触发
+            setTimeout(() => {
+                if (focusOn() && !FOCUS.fitted) { focusFit(); FOCUS.fitted = true; }
+            }, 20);
+        }
+
+        function focusExit() {
+            document.body.classList.remove("focus-mode");
+            $("focus-bar").hidden = true;
+            focusResetTransform();
+            FOCUS.fitted = false;
+            window.scrollTo(0, FOCUS.savedScroll || 0);
+        }
+
+        // 隐藏原图 / 复原
         function applySoloPreview() {
             const row = $("mp-preview-row");
             if (row) row.classList.toggle("solo", !!CFG.soloPreview);
             const sw = $("set-solo-preview");
             if (sw) sw.classList.toggle("on", !!CFG.soloPreview);
+            if (CFG.soloPreview) {
+                if (!focusOn()) focusEnter();
+            } else if (focusOn()) {
+                focusExit();
+            }
         }
+
         $("set-solo-preview").addEventListener("click", () => {
             CFG.soloPreview = !CFG.soloPreview;
             cfgSave(true);
             applySoloPreview();
         });
+
+        $("focus-restore").addEventListener("click", () => {
+            CFG.soloPreview = false;
+            cfgSave(true);
+            applySoloPreview();
+            setStatus("已复原：重新显示原图");
+        });
+
+        // ESC 也能退出专注模式
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && focusOn()) {
+                CFG.soloPreview = false;
+                cfgSave(true);
+                applySoloPreview();
+            }
+        });
+
         applySoloPreview();
 
         loadPalette();
