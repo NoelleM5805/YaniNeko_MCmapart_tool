@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地图画工具箱</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+            background: linear-gradient(135deg, #eef2f7 0%, #d9e1ec 100%);
+            min-height: 100vh;
+            color: #2c3e50;
+            padding: 20px;
+        }
+
+        .app {
+            max-width: 1080px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 50px -12px rgba(0, 0, 0, .25);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 20px 26px;
+            background: linear-gradient(135deg, #1e6fd9, #2a7fe8);
+            color: #fff;
+        }
+
+        header h1 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        header p {
+            font-size: 13px;
+            opacity: .92;
+            margin-top: 4px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #f0f4fa;
+            border-bottom: 1px solid #e2e8f2;
+            padding: 0 12px;
+            gap: 4px;
+        }
+
+        .tab {
+            background: transparent;
+            border: none;
+            padding: 12px 20px;
+            font-size: 13.5px;
+            font-family: inherit;
+            font-weight: 600;
+            color: #6b7789;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: .18s;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .tab:hover {
+            color: #1e6fd9;
+            background: #e8f0fe;
+        }
+
+        .tab.active {
+            color: #1e6fd9;
+            border-bottom-color: #1e6fd9;
+            background: #fff;
+        }
+
+        .tab-panel {
+            padding: 22px 26px;
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .section {
+            margin-bottom: 18px;
+        }
+
+        .section>.s-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            letter-spacing: .2px;
+        }
+
+        .section>.s-hint {
+            font-size: 12px;
+            color: #7a8699;
+            margin-top: 6px;
+        }
+
+        .drop-zone {
+            position: relative;
+            border: 2px dashed #b8c2d0;
+            border-radius: 12px;
+            padding: 28px 20px;
+            text-align: center;
+            cursor: pointer;
+            background: #fafcff;
+            transition: .18s;
+            user-select: none;
+        }
+
+        .drop-zone:hover {
+            border-color: #1e6fd9;
+            background: #f0f6ff;
+        }
+
+        .drop-zone.drag-over {
+            border-color: #1e6fd9;
+            background: #e6f0ff;
+            box-shadow: 0 0 0 4px rgba(30, 111, 217, .15);
+        }
+
+        .drop-zone.has-file {
+            padding: 14px 18px;
+            border-style: solid;
+            border-color: #1e6fd9;
+            background: #eef5ff;
+        }
+
+        .drop-icon {
+            font-size: 34px;
+            margin-bottom: 6px;
+        }
+
+        .drop-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .drop-sub {
+            font-size: 12px;
+            color: #7a8699;
+            margin-top: 4px;
+        }
+
+        .drop-zone.has-file .drop-icon,
+        .drop-zone.has-file .drop-title,
+        .drop-zone.has-file .drop-sub {
+            display: none;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #1e5db0;
+            font-size: 13.5px;
+            max-width: 500px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: #7a8699;
+            background: #fff;
+            padding: 2px 10px;
+            border-radius: 10px;
+            border: 1px solid #d8dee8;
+        }
+
+        .file-clear {
+            background: transparent;
+            border: none;
+            color: #a0a8b8;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: .15s;
+            line-height: 1;
+        }
+
+        .file-clear:hover {
+            background: #ffe0e0;
+            color: #d33;
+        }
+
+        .ratios {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+            padding: 12px;
+            background: #f7f9fc;
+            border-radius: 10px;
+            border: 1px solid #e2e8f2;
+            min-height: 60px;
+        }
+
+        .ratios .empty {
+            grid-column: 1 / -1;
+            color: #a0a8b8;
+            font-size: 12px;
+            text-align: center;
+            padding: 8px;
+        }
+
+        .ratio-btn {
+            background: #fff;
+            border: 1px solid #d8dee8;
+            border-radius: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-family: inherit;
+            text-align: left;
+            transition: .15s;
+        }
+
+        .ratio-btn:hover {
+            border-color: #1e6fd9;
+            background: #f0f6ff;
+        }
+
+        .ratio-btn.selected {
+            border-color: #1e6fd9;
+            background: #e8f0fe;
+            box-shadow: 0 0 0 2px rgba(30, 111, 217, .15);
+        }
+
+        .ratio-title {
+            font-weight: 700;
+            font-size: 13px;
+            color: #1e5db0;
+        }
+
+        .ratio-sub {
+            font-size: 11px;
+            color: #7a8699;
+            margin-top: 2px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        label.inline {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12.5px;
+            color: #2c3e50;
+        }
+
+        select,
+        input[type=number],
+        input[type=text] {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #c2cbd8;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: inherit;
+            background: #fff;
+            outline: none;
+            transition: .15s;
+            color: #1f2a3a;
+        }
+
+        select:focus,
+        input:focus {
+            border-color: #1e6fd9;
+            box-shadow: 0 0 0 3px rgba(30, 111, 217, .15);
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: #1e6fd9;
+        }
+
+        .faces {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 12px;
+            background: #f7f9fc;
+            border-radius: 10px;
+            border: 1px solid #e2e8f2;
+        }
+
+        .face-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #fff;
+            border: 1px solid #e2e8f2;
+            transition: .15s;
+            user-select: none;
+            font-size: 13px;
+        }
+
+        .face-item:hover {
+            border-color: #8fa8cc;
+            background: #f0f5ff;
+        }
+
+        .face-item.checked {
+            background: #e8f0fe;
+            border-color: #1e6fd9;
+        }
+
+        .face-item input {
+            display: none;
+        }
+
+        .face-item .box {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 2px solid #b8c2d0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: .15s;
+        }
+
+        .face-item.checked .box {
+            background: #1e6fd9;
+            border-color: #1a5cb0;
+        }
+
+        .face-item.checked .box::after {
+            content: "✓";
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        button {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-family: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .15s;
+            background: #fff;
+            color: #1f2a3a;
+            border: 1px solid #c2cbd8;
+        }
+
+        button:hover:not(:disabled) {
+            background: #e8eef9;
+            border-color: #8fa8cc;
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #1e6fd9;
+            border-color: #1a5cb0;
+            color: #fff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #2a7fe8;
+        }
+
+        .btn-success {
+            background: #1a7a3c;
+            border-color: #155f2e;
+            color: #fff;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #229a4d;
+        }
+
+        .btn-block {
+            width: 100%;
+            padding: 13px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .quick-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .preview-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .preview-box {
+            position: relative;
+            background: #f7f9fc;
+            border: 1px solid #e2e8f2;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: border-color .15s;
+        }
+
+        .preview-box img {
+            max-width: 100%;
+            max-height: 220px;
+            border-radius: 6px;
+            image-rendering: pixelated;
+            background: #fff;
+        }
+
+        .preview-box .placeholder {
+            color: #a0a8b8;
+            font-size: 12px;
+        }
+
+        .preview-box .caption {
+            font-size: 11px;
+            color: #7a8699;
+            margin-top: 6px;
+        }
+
+        .preview-box .pal-meta {
+            font-size: 11px;
+            color: #1e5db0;
+            margin-top: 4px;
+            font-weight: 600;
+        }
+
+        .preview-box .updating {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(30, 111, 217, .9);
+            color: #fff;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity .15s;
+            pointer-events: none;
+        }
+
+        .preview-box.updating .updating {
+            opacity: 1;
+        }
+
+        .preview-box img.zoomable {
+            cursor: zoom-in;
+            transition: transform .15s, box-shadow .15s;
+        }
+
+        .preview-box img.zoomable:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 16px rgba(30, 111, 217, .3);
+        }
+
+        .preview-box .zoom-hint {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(30, 111, 217, .9);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-weight: 600;
+            opacity: 0;
+            transition: opacity .15s;
+            pointer-events: none;
+        }
+
+        .preview-box:hover .zoom-hint {
+            opacity: 1;
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: rgba(15, 20, 30, .88);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .modal[hidden] {
+            display: none;
+        }
+
+        .modal-img {
+            max-width: 92vw;
+            max-height: 92vh;
+            image-rendering: pixelated;
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+            cursor: grab;
+            transform-origin: center center;
+            will-change: transform;
+        }
+
+        .modal-img.grabbing {
+            cursor: grabbing;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, .18);
+            color: #fff;
+            font-size: 20px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: .15s;
+            padding: 0;
+        }
+
+        .modal-close:hover {
+            background: rgba(255, 255, 255, .35);
+        }
+
+        .modal-toolbar {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 0, 0, .55);
+            padding: 8px 14px;
+            border-radius: 24px;
+            color: #fff;
+            font-size: 12.5px;
+            backdrop-filter: blur(6px);
+        }
+
+        .modal-toolbar button {
+            background: rgba(255, 255, 255, .15);
+            color: #fff;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .15s;
+        }
+
+        .modal-toolbar button:hover {
+            background: rgba(255, 255, 255, .3);
+        }
+
+        .modal-toolbar .zoom-label {
+            min-width: 52px;
+            text-align: center;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .log {
+            background: #1e2530;
+            color: #d4e2f5;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            padding: 12px 14px;
+            border-radius: 10px;
+            height: 180px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .log::-webkit-scrollbar-thumb {
+            background: #3a4759;
+            border-radius: 4px;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 11px 26px;
+            background: #f7f9fc;
+            border-top: 1px solid #e2e8f2;
+            font-size: 13px;
+        }
+
+        .badge {
+            background: #eef3fc;
+            color: #1e5db0;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .badge.running {
+            background: #fff3cd;
+            color: #8a6d00;
+        }
+
+        .badge.ok {
+            background: #d4f4dd;
+            color: #1a7a3c;
+        }
+
+        .badge.err {
+            background: #fde2e2;
+            color: #b02a2a;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #7a8699;
+        }
+
+        .hint.warn {
+            color: #c47f00;
+        }
+
+        .mb-6 {
+            margin-bottom: 6px;
+        }
+
+        .mt-8 {
+            margin-top: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header>
+            <h1>🧰 地图画工具箱</h1>
+            <p>地图画生成（实时预览 + 点击放大）· 默认地面朝向 XZ · 投影切分 · Glow Lichen 批量修改</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="mapart">🎨 地图画生成</button>
+            <button class="tab" data-tab="slice">✂️ 投影切分</button>
+            <button class="tab" data-tab="lichen">🌿 Glow Lichen</button>
+        </div>
+
+        <div class="tab-panel active" data-panel="mapart">
+
+            <div class="section">
+                <label class="s-label">1. 上传图片</label>
+                <div class="drop-zone" id="mp-drop">
+                    <input type="file" hidden accept="image/*" id="mp-file">
+                    <div class="drop-icon">🖼️</div>
+                    <div class="drop-title">点击选择图片，或拖到这里</div>
+                    <div class="drop-sub">支持 PNG / JPG / BMP / GIF / WebP</div>
+                    <div class="file-info" id="mp-file-info" hidden>
+                        <span class="file-name" id="mp-file-name"></span>
+                        <span class="file-size" id="mp-file-size"></span>
+                        <button class="file-clear" id="mp-file-clear" title="移除">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">2. 推荐比例（点击套用）</label>
+                <div class="ratios" id="mp-ratios">
+                    <div class="empty">上传图片后自动分析并给出推荐</div>
+                </div>
+                <div class="s-hint">每格 = 128 × 128 方块</div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">3. 算法选择</label>
+                <div class="grid-2 mb-6">
+                    <div>
+                        <label class="hint">颜色匹配算法</label>
+                        <select id="mp-algo">
+                            <option value="weighted" selected>加权 RGB（推荐）</option>
+                            <option value="euclidean">欧几里得 RGB（最快）</option>
+                            <option value="redmean">Redmean</option>
+                            <option value="cie76">CIE76</option>
+                            <option value="cie94">CIE94</option>
+                            <option value="ciede2000">CIEDE2000（最精确）</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="hint">抖动算法</label>
+                        <select id="mp-dither">
+                            <option value="none" selected>无抖动（直接匹配）</option>
+                            <option value="bayer4">Bayer 4×4</option>
+                            <option value="bayer8">Bayer 8×8</option>
+                            <option value="floyd">Floyd-Steinberg</option>
+                            <option value="atkinson">Atkinson</option>
+                            <option value="jarvis">Jarvis-Judice-Ninke</option>
+                            <option value="stucki">Stucki</option>
+                            <option value="burkes">Burkes</option>
+                            <option value="sierra">Sierra</option>
+                            <option value="sierra_lite">Sierra-Lite</option>
+                        </select>
+                    </div>
+                </div>
+                <label class="hint">抖动强度：<span id="mp-strength-val">100</span>%</label>
+                <input type="range" id="mp-strength" min="0" max="100" value="100">
+            </div>
+
+            <div class="section">
+                <label class="s-label">4. 尺寸设置</label>
+                <div class="grid-2 mb-6">
+                    <div>
+                        <label class="hint">尺寸模式</label>
+                        <select id="mp-size-mode">
+                            <option value="grid" selected>网格比例（每格 128）</option>
+                            <option value="maxsize">按最大边长</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="hint">缩放方式</label>
+                        <select id="mp-fit">
+                            <option value="stretch" selected>拉伸（铺满）</option>
+                            <option value="fit">适应（留白边）</option>
+                            <option value="fill">填充（裁剪溢出）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid-2" id="mp-grid-fields">
+                    <div>
+                        <label class="hint">X 格数（每格 128）</label>
+                        <input type="number" id="mp-grid-x" value="1" min="1" max="16">
+                    </div>
+                    <div>
+                        <label class="hint">Y 格数（每格 128）</label>
+                        <input type="number" id="mp-grid-y" value="1" min="1" max="16">
+                    </div>
+                </div>
+                <div class="grid-2" id="mp-max-fields" style="display:none">
+                    <div>
+                        <label class="hint">最长边（方块）</label>
+                        <input type="number" id="mp-max-size" value="128" min="8" max="512">
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">5. 实时预览（点击可放大）</label>
+                <div class="preview-row">
+                    <div class="preview-box" id="mp-preview-orig">
+                        <div class="placeholder">原图缩略图</div>
+                    </div>
+                    <div class="preview-box" id="mp-preview-pal">
+                        <div class="placeholder">调色板预览</div>
+                        <span class="updating">更新中…</span>
+                        <span class="zoom-hint">点击放大</span>
+                    </div>
+                </div>
+                <div class="s-hint">调整算法、抖动、尺寸等参数时会自动刷新预览</div>
+            </div>
+
+            <div class="section">
+                <button class="btn-primary btn-block" id="mp-generate">
+                    ▶ 生成 .litematic
+                </button>
+                <div class="hint warn mt-8" style="text-align:center">
+                    生成的文件可另存为新文件，不影响原图<br>
+                    输出为地面朝向（XZ）：图片宽 → X 轴，图片高 → Z 轴，单层无底板
+                </div>
+            </div>
+
+            <div class="section" id="mp-save-sec" hidden>
+                <button class="btn-success btn-block" id="mp-save">
+                    ⬇ 保存生成的地图画文件
+                </button>
+            </div>
+
+            <div class="section" style="margin-bottom:0">
+                <label class="s-label">处理日志</label>
+                <div class="log" id="mp-log">等待操作…</div>
+            </div>
+        </div>
+
+        <div class="tab-panel" data-panel="slice">
+            <div class="section">
+                <label class="s-label">1. 上传 .litematic 文件</label>
+                <div class="drop-zone" id="sl-drop">
+                    <input type="file" hidden accept=".litematic" id="sl-file">
+                    <div class="drop-icon">📦</div>
+                    <div class="drop-title">点击选择文件，或拖到这里</div>
+                    <div class="drop-sub">仅支持 .litematic 投影文件</div>
+                    <div class="file-info" id="sl-file-info" hidden>
+                        <span class="file-name" id="sl-file-name"></span>
+                        <span class="file-size" id="sl-file-size"></span>
+                        <button class="file-clear" id="sl-file-clear">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">2. 切分网格</label>
+                <div class="grid-2">
+                    <div>
+                        <label class="hint">X 方向列数</label>
+                        <input type="number" id="sl-cols" value="4" min="1" max="64">
+                    </div>
+                    <div>
+                        <label class="hint">Z 方向行数</label>
+                        <input type="number" id="sl-rows" value="4" min="1" max="64">
+                    </div>
+                </div>
+                <div class="s-hint">每个子区域保留完整 Y 轴高度，结果打包为 zip 下载</div>
+            </div>
+
+            <div class="section">
+                <button class="btn-primary btn-block" id="sl-run">▶ 开始切分</button>
+            </div>
+
+            <div class="section" id="sl-save-sec" hidden>
+                <button class="btn-success btn-block" id="sl-save">⬇ 保存结果（zip）</button>
+            </div>
+
+            <div class="section" style="margin-bottom:0">
+                <label class="s-label">处理日志</label>
+                <div class="log" id="sl-log">等待操作…</div>
+            </div>
+        </div>
+
+        <div class="tab-panel" data-panel="lichen">
+            <div class="section">
+                <label class="s-label">1. 上传 .litematic 文件</label>
+                <div class="drop-zone" id="lc-drop">
+                    <input type="file" hidden accept=".litematic" id="lc-file">
+                    <div class="drop-icon">🌿</div>
+                    <div class="drop-title">点击选择文件，或拖到这里</div>
+                    <div class="drop-sub">仅支持 .litematic 投影文件</div>
+                    <div class="file-info" id="lc-file-info" hidden>
+                        <span class="file-name" id="lc-file-name"></span>
+                        <span class="file-size" id="lc-file-size"></span>
+                        <button class="file-clear" id="lc-file-clear">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">2. 勾选要开启（true）的面</label>
+                <div class="faces" id="lc-faces"></div>
+                <div class="quick-row">
+                    <button class="btn-small" data-only="down">仅下</button>
+                    <button class="btn-small" data-only="up">仅上</button>
+                    <button class="btn-small" data-only="north">仅北</button>
+                    <button class="btn-small" data-only="south">仅南</button>
+                    <button class="btn-small" data-only="east">仅东</button>
+                    <button class="btn-small" data-only="west">仅西</button>
+                    <button class="btn-small" data-all="1">全开</button>
+                    <button class="btn-small" data-all="0">全关</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <button class="btn-primary btn-block" id="lc-run">▶ 开始处理</button>
+                <div class="hint warn mt-8" style="text-align:center">
+                    结果另存为新文件，原文件不受影响
+                </div>
+            </div>
+
+            <div class="section" id="lc-save-sec" hidden>
+                <button class="btn-success btn-block" id="lc-save">⬇ 保存修改后的文件</button>
+            </div>
+
+            <div class="section" style="margin-bottom:0">
+                <label class="s-label">处理日志</label>
+                <div class="log" id="lc-log">等待操作…</div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <span id="status">就绪</span>
+            <span class="badge" id="badge">—</span>
+        </div>
+    </div>
+
+    <div class="modal" id="mp-modal" hidden>
+        <img class="modal-img" id="mp-modal-img" alt="放大预览">
+        <button class="modal-close" id="mp-modal-close" title="关闭 (ESC)">✕</button>
+        <div class="modal-toolbar">
+            <button id="mp-modal-out" title="缩小">−</button>
+            <span class="zoom-label" id="mp-modal-zoom">100%</span>
+            <button id="mp-modal-in" title="放大">+</button>
+            <button id="mp-modal-fit" title="适应屏幕">适应</button>
+            <button id="mp-modal-100" title="原始尺寸">100%</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 通用工具
+        // ============================================================
+        function $(id) { return document.getElementById(id); }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + " B";
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+            return (bytes / 1024 / 1024).toFixed(2) + " MB";
+        }
+
+        function setBadge(text, cls) {
+            const b = $("badge");
+            b.textContent = text;
+            b.className = "badge" + (cls ? " " + cls : "");
+        }
+
+        function setStatus(text) {
+            $("status").textContent = text;
+        }
+
+        document.querySelectorAll(".tab").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const target = btn.dataset.tab;
+                document.querySelectorAll(".tab").forEach(b =>
+                    b.classList.toggle("active", b === btn));
+                document.querySelectorAll(".tab-panel").forEach(p =>
+                    p.classList.toggle("active", p.dataset.panel === target));
+            });
+        });
+
+        document.addEventListener("dragover", e => e.preventDefault());
+        document.addEventListener("drop", e => e.preventDefault());
+
+        function bindDropZone(dropId, inputId, onFile, acceptExt) {
+            const drop = $(dropId);
+            const input = $(inputId);
+            drop.addEventListener("click", e => {
+                if (e.target.closest(".file-clear")) return;
+                input.click();
+            });
+            input.addEventListener("change", () => {
+                if (input.files[0]) onFile(input.files[0]);
+            });
+            ["dragenter", "dragover"].forEach(ev => {
+                drop.addEventListener(ev, e => {
+                    e.preventDefault(); e.stopPropagation();
+                    drop.classList.add("drag-over");
+                });
+            });
+            ["dragleave", "drop"].forEach(ev => {
+                drop.addEventListener(ev, e => {
+                    e.preventDefault(); e.stopPropagation();
+                    drop.classList.remove("drag-over");
+                });
+            });
+            drop.addEventListener("drop", e => {
+                const f = e.dataTransfer.files[0];
+                if (!f) return;
+                if (acceptExt && !f.name.toLowerCase().endsWith(acceptExt)) {
+                    if (!confirm(`文件 "${f.name}" 不是 ${acceptExt}，仍要继续吗？`)) return;
+                }
+                onFile(f);
+            });
+        }
+
+        function showFileInfo(prefix, file) {
+            $(prefix + "-file-name").textContent = file.name;
+            $(prefix + "-file-size").textContent = formatSize(file.size);
+            $(prefix + "-file-info").hidden = false;
+            $(prefix + "-drop").classList.add("has-file");
+        }
+
+        function clearFileInfo(prefix) {
+            $(prefix + "-file-info").hidden = true;
+            $(prefix + "-drop").classList.remove("has-file");
+        }
+
+        async function saveBlob(blob, filename) {
+            if (window.showSaveFilePicker) {
+                try {
+                    const ext = filename.split(".").pop();
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: ext.toUpperCase() + " 文件",
+                            accept: { "application/octet-stream": ["." + ext] }
+                        }]
+                    });
+                    const w = await handle.createWritable();
+                    await w.write(blob);
+                    await w.close();
+                    return handle.name;
+                } catch (e) {
+                    if (e.name === "AbortError") return null;
+                }
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            return filename;
+        }
+
+        function pollTask(taskId, logEl, onDone) {
+            let lastLen = 0;
+            async function step() {
+                try {
+                    const res = await fetch(`/api/status/${taskId}`);
+                    const data = await res.json();
+                    if (!data.ok) throw new Error(data.msg);
+                    if (data.logs.length !== lastLen) {
+                        logEl.textContent = data.logs.join("\n");
+                        logEl.scrollTop = logEl.scrollHeight;
+                        lastLen = data.logs.length;
+                    }
+                    if (data.done) { onDone(data); return; }
+                    setTimeout(step, 500);
+                } catch (e) {
+                    logEl.textContent += "\n[轮询错误] " + e;
+                    setTimeout(step, 1500);
+                }
+            }
+            step();
+        }
+
+        // ============================================================
+        // 图片放大模态框
+        // ============================================================
+        const ZOOM = {
+            scale: 1, tx: 0, ty: 0,
+            dragging: false,
+            startX: 0, startY: 0, startTx: 0, startTy: 0,
+        };
+
+        function applyZoomTransform() {
+            const img = $("mp-modal-img");
+            img.style.transform =
+                `translate(${ZOOM.tx}px, ${ZOOM.ty}px) scale(${ZOOM.scale})`;
+            $("mp-modal-zoom").textContent = Math.round(ZOOM.scale * 100) + "%";
+        }
+
+        function openModal(src) {
+            const modal = $("mp-modal");
+            const img = $("mp-modal-img");
+            img.src = src;
+            ZOOM.scale = 1; ZOOM.tx = 0; ZOOM.ty = 0;
+            applyZoomTransform();
+            modal.hidden = false;
+
+            img.onload = () => {
+                const maxW = window.innerWidth * 0.9;
+                const maxH = window.innerHeight * 0.9;
+                const fitScale = Math.min(1, maxW / img.naturalWidth, maxH / img.naturalHeight);
+                if (fitScale < 1) {
+                    ZOOM.scale = fitScale;
+                    applyZoomTransform();
+                }
+            };
+        }
+
+        function closeModal() {
+            const modal = $("mp-modal");
+            modal.hidden = true;
+            const img = $("mp-modal-img");
+            img.src = "";
+            img.style.transform = "";
+            ZOOM.dragging = false;
+            img.classList.remove("grabbing");
+        }
+
+        function zoomAt(factor, clientX, clientY) {
+            const img = $("mp-modal-img");
+            const newScale = Math.max(0.1, Math.min(16, ZOOM.scale * factor));
+            const rect = img.getBoundingClientRect();
+            const cx = clientX - (rect.left + rect.width / 2);
+            const cy = clientY - (rect.top + rect.height / 2);
+            const ratio = newScale / ZOOM.scale;
+            ZOOM.tx -= cx * (ratio - 1);
+            ZOOM.ty -= cy * (ratio - 1);
+            ZOOM.scale = newScale;
+            applyZoomTransform();
+        }
+
+        function zoomCenter(factor) {
+            zoomAt(factor, window.innerWidth / 2, window.innerHeight / 2);
+        }
+
+        function fitToScreen() {
+            const img = $("mp-modal-img");
+            if (!img.naturalWidth || !img.naturalHeight) return;
+            const maxW = window.innerWidth * 0.9;
+            const maxH = window.innerHeight * 0.9;
+            ZOOM.scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+            ZOOM.tx = 0; ZOOM.ty = 0;
+            applyZoomTransform();
+        }
+
+        function zoom100() {
+            ZOOM.scale = 1; ZOOM.tx = 0; ZOOM.ty = 0;
+            applyZoomTransform();
+        }
+
+        (function initModal() {
+            const modal = $("mp-modal");
+            const img = $("mp-modal-img");
+
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) closeModal();
+            });
+            $("mp-modal-close").addEventListener("click", closeModal);
+
+            document.addEventListener("keydown", (e) => {
+                if (modal.hidden) return;
+                if (e.key === "Escape") closeModal();
+                if (e.key === "+" || e.key === "=") zoomCenter(1.2);
+                if (e.key === "-" || e.key === "_") zoomCenter(1 / 1.2);
+                if (e.key === "0") fitToScreen();
+            });
+
+            modal.addEventListener("wheel", (e) => {
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+                zoomAt(factor, e.clientX, e.clientY);
+            }, { passive: false });
+
+            img.addEventListener("mousedown", (e) => {
+                e.preventDefault();
+                ZOOM.dragging = true;
+                ZOOM.startX = e.clientX; ZOOM.startY = e.clientY;
+                ZOOM.startTx = ZOOM.tx; ZOOM.startTy = ZOOM.ty;
+                img.classList.add("grabbing");
+            });
+            window.addEventListener("mousemove", (e) => {
+                if (!ZOOM.dragging) return;
+                ZOOM.tx = ZOOM.startTx + (e.clientX - ZOOM.startX);
+                ZOOM.ty = ZOOM.startTy + (e.clientY - ZOOM.startY);
+                applyZoomTransform();
+            });
+            window.addEventListener("mouseup", () => {
+                if (ZOOM.dragging) {
+                    ZOOM.dragging = false;
+                    img.classList.remove("grabbing");
+                }
+            });
+
+            img.addEventListener("touchstart", (e) => {
+                if (e.touches.length !== 1) return;
+                const t = e.touches[0];
+                ZOOM.dragging = true;
+                ZOOM.startX = t.clientX; ZOOM.startY = t.clientY;
+                ZOOM.startTx = ZOOM.tx; ZOOM.startTy = ZOOM.ty;
+            }, { passive: true });
+            img.addEventListener("touchmove", (e) => {
+                if (!ZOOM.dragging || e.touches.length !== 1) return;
+                const t = e.touches[0];
+                ZOOM.tx = ZOOM.startTx + (t.clientX - ZOOM.startX);
+                ZOOM.ty = ZOOM.startTy + (t.clientY - ZOOM.startY);
+                applyZoomTransform();
+            }, { passive: true });
+            img.addEventListener("touchend", () => { ZOOM.dragging = false; });
+
+            $("mp-modal-in").addEventListener("click", () => zoomCenter(1.25));
+            $("mp-modal-out").addEventListener("click", () => zoomCenter(1 / 1.25));
+            $("mp-modal-fit").addEventListener("click", fitToScreen);
+            $("mp-modal-100").addEventListener("click", zoom100);
+        })();
+
+        // ============================================================
+        // 地图画生成
+        // ============================================================
+        const MP = {
+            file: null, sid: null, imageInfo: null,
+            taskId: null, resultBlob: null,
+            resultName: "mapart.litematic",
+            previewSeq: 0, previewTimer: null,
+            lastPreviewSrc: "", lastOriginalSrc: "",
+        };
+
+        bindDropZone("mp-drop", "mp-file", async (f) => {
+            if (!f.type.startsWith("image/")) {
+                alert("请选择图片文件");
+                return;
+            }
+            MP.file = f;
+            showFileInfo("mp", f);
+            setStatus("正在上传图片…");
+            setBadge("上传中", "running");
+
+            const fd = new FormData();
+            fd.append("file", f);
+            try {
+                const res = await fetch("/api/mapart/upload", { method: "POST", body: fd });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "上传失败");
+                MP.sid = data.sid;
+                MP.imageInfo = data;
+                renderRatios(data.recommendations);
+                renderOriginal(data.original);
+                MP.lastOriginalSrc = data.original;
+                setStatus(`已上传：${data.width}×${data.height}`);
+                setBadge("图片就绪", "ok");
+                schedulePreview(80);
+            } catch (e) {
+                setStatus("上传失败：" + e.message);
+                setBadge("失败", "err");
+            }
+        }, null);
+
+        $("mp-file-clear").addEventListener("click", (e) => {
+            e.stopPropagation();
+            MP.file = null; MP.sid = null; MP.imageInfo = null;
+            MP.lastPreviewSrc = ""; MP.lastOriginalSrc = "";
+            clearFileInfo("mp");
+            $("mp-ratios").innerHTML = '<div class="empty">上传图片后自动分析并给出推荐</div>';
+            $("mp-preview-orig").innerHTML = '<div class="placeholder">原图缩略图</div>';
+            $("mp-preview-pal").innerHTML = '<div class="placeholder">调色板预览</div>' +
+                '<span class="updating">更新中…</span>' +
+                '<span class="zoom-hint">点击放大</span>';
+            setStatus("就绪");
+            setBadge("—");
+        });
+
+        function renderRatios(recs) {
+            const el = $("mp-ratios");
+            el.innerHTML = "";
+            if (!recs || !recs.length) {
+                el.innerHTML = '<div class="empty">无法分析比例</div>';
+                return;
+            }
+            recs.forEach((r) => {
+                const err = (Math.exp(r.diff) - 1) * 100;
+                const b = document.createElement("button");
+                b.className = "ratio-btn";
+                b.innerHTML = `<div class="ratio-title">${r.x}×${r.y}  (${r.px_w}×${r.px_h})</div>
+                   <div class="ratio-sub">偏差 ≈ ${err.toFixed(1)}%</div>`;
+                b.addEventListener("click", () => {
+                    $("mp-size-mode").value = "grid";
+                    onSizeModeChange();
+                    $("mp-grid-x").value = r.x;
+                    $("mp-grid-y").value = r.y;
+                    document.querySelectorAll("#mp-ratios .ratio-btn").forEach(el =>
+                        el.classList.toggle("selected", el === b));
+                    schedulePreview(0);
+                });
+                el.appendChild(b);
+            });
+        }
+
+        function renderOriginal(dataUrl) {
+            const box = $("mp-preview-orig");
+            box.innerHTML =
+                `<img class="zoomable" src="${dataUrl}" alt="原图" title="点击放大">
+     <div class="caption">原图</div>
+     <span class="zoom-hint">点击放大</span>`;
+            box.querySelector("img").addEventListener("click", () => openModal(dataUrl));
+        }
+
+        function schedulePreview(delay = 350) {
+            if (!MP.sid) return;
+            if (MP.previewTimer) clearTimeout(MP.previewTimer);
+            MP.previewTimer = setTimeout(previewMap, delay);
+        }
+
+        async function previewMap() {
+            MP.previewTimer = null;
+            if (!MP.sid) return;
+
+            const seq = ++MP.previewSeq;
+            const box = $("mp-preview-pal");
+            box.classList.add("updating");
+
+            const payload = {
+                sid: MP.sid,
+                size_mode: $("mp-size-mode").value,
+                grid_x: parseInt($("mp-grid-x").value, 10) || 1,
+                grid_y: parseInt($("mp-grid-y").value, 10) || 1,
+                max_size: parseInt($("mp-max-size").value, 10) || 128,
+                fit_mode: $("mp-fit").value,
+                algo: $("mp-algo").value,
+                dither: $("mp-dither").value,
+                strength: parseInt($("mp-strength").value, 10) || 0,
+            };
+
+            try {
+                const res = await fetch("/api/mapart/preview", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+
+                if (seq !== MP.previewSeq) return;
+                if (!data.ok) throw new Error(data.msg || "预览失败");
+
+                MP.lastPreviewSrc = data.preview;
+                box.innerHTML =
+                    `<img class="zoomable" src="${data.preview}" alt="预览" title="点击放大">
+       <div class="pal-meta">${data.width} × ${data.height} 方块 · 预览 ${data.preview_width}×${data.preview_height}</div>
+       <span class="updating">更新中…</span>
+       <span class="zoom-hint">点击放大</span>`;
+                box.classList.remove("updating");
+
+                box.querySelector("img").addEventListener("click", () => {
+                    if (MP.lastPreviewSrc) openModal(MP.lastPreviewSrc);
+                });
+
+                setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块`);
+                setBadge(`${data.blocks} 方块 · 预览`, "ok");
+            } catch (e) {
+                if (seq !== MP.previewSeq) return;
+                box.classList.remove("updating");
+                setStatus("预览失败：" + e.message);
+            }
+        }
+
+        ["mp-size-mode", "mp-grid-x", "mp-grid-y", "mp-max-size", "mp-fit",
+            "mp-algo", "mp-dither", "mp-strength"].forEach(id => {
+                const el = $(id);
+                el.addEventListener("input", () => schedulePreview(350));
+                el.addEventListener("change", () => schedulePreview(150));
+            });
+
+        function onSizeModeChange() {
+            const mode = $("mp-size-mode").value;
+            $("mp-grid-fields").style.display = mode === "grid" ? "" : "none";
+            $("mp-max-fields").style.display = mode === "maxsize" ? "" : "none";
+        }
+        $("mp-size-mode").addEventListener("change", () => {
+            onSizeModeChange();
+            schedulePreview(150);
+        });
+
+        $("mp-strength").addEventListener("input", () => {
+            $("mp-strength-val").textContent = $("mp-strength").value;
+        });
+
+        $("mp-generate").addEventListener("click", async () => {
+            if (!MP.sid) { alert("请先上传图片"); return; }
+            const btn = $("mp-generate");
+            btn.disabled = true;
+            $("mp-save-sec").hidden = true;
+            MP.resultBlob = null;
+            const logEl = $("mp-log");
+            logEl.textContent = "正在启动生成任务…";
+            setStatus("生成中…");
+            setBadge("处理中", "running");
+
+            const payload = {
+                sid: MP.sid,
+                size_mode: $("mp-size-mode").value,
+                grid_x: parseInt($("mp-grid-x").value, 10) || 1,
+                grid_y: parseInt($("mp-grid-y").value, 10) || 1,
+                max_size: parseInt($("mp-max-size").value, 10) || 128,
+                fit_mode: $("mp-fit").value,
+                algo: $("mp-algo").value,
+                dither: $("mp-dither").value,
+                strength: parseInt($("mp-strength").value, 10) || 0,
+            };
+
+            try {
+                const res = await fetch("/api/mapart/generate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "启动失败");
+                MP.taskId = data.task_id;
+                pollTask(data.task_id, logEl, async (st) => {
+                    btn.disabled = false;
+                    if (st.error) {
+                        setStatus("生成失败");
+                        setBadge("失败", "err");
+                        return;
+                    }
+                    const r = st.result || {};
+                    setStatus(`完成：${r.width}×${r.height}，${r.placed} 方块`);
+                    setBadge(`${r.placed} 方块 · 完成`, "ok");
+                    try {
+                        const dres = await fetch(`/api/download/${MP.taskId}`);
+                        if (dres.ok) {
+                            MP.resultBlob = await dres.blob();
+                            MP.resultName = "mapart.litematic";
+                            $("mp-save-sec").hidden = false;
+                        }
+                    } catch (e) { console.error(e); }
+                });
+            } catch (e) {
+                btn.disabled = false;
+                setStatus("失败：" + e.message);
+                setBadge("失败", "err");
+            }
+        });
+
+        $("mp-save").addEventListener("click", async () => {
+            if (!MP.resultBlob) return;
+            const name = await saveBlob(MP.resultBlob, MP.resultName || "mapart.litematic");
+            if (name) {
+                setStatus("已保存：" + name);
+                setBadge("已保存", "ok");
+            }
+        });
+
+        // ============================================================
+        // 投影切分
+        // ============================================================
+        const SL = { file: null, taskId: null, resultBlob: null, resultName: "slices.zip" };
+
+        bindDropZone("sl-drop", "sl-file", (f) => {
+            SL.file = f;
+            showFileInfo("sl", f);
+            setStatus(`已选择：${f.name}`);
+        }, ".litematic");
+
+        $("sl-file-clear").addEventListener("click", (e) => {
+            e.stopPropagation();
+            SL.file = null;
+            clearFileInfo("sl");
+            setStatus("就绪");
+        });
+
+        $("sl-run").addEventListener("click", async () => {
+            if (!SL.file) { alert("请先上传 .litematic 文件"); return; }
+            const btn = $("sl-run");
+            btn.disabled = true;
+            $("sl-save-sec").hidden = true;
+            SL.resultBlob = null;
+            const logEl = $("sl-log");
+            logEl.textContent = "正在上传…";
+            setStatus("切分中…");
+            setBadge("处理中", "running");
+
+            const fd = new FormData();
+            fd.append("file", SL.file);
+            fd.append("cols", $("sl-cols").value);
+            fd.append("rows", $("sl-rows").value);
+
+            try {
+                const res = await fetch("/api/slice/process", { method: "POST", body: fd });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "启动失败");
+                SL.taskId = data.task_id;
+                pollTask(data.task_id, logEl, async (st) => {
+                    btn.disabled = false;
+                    if (st.error) {
+                        setStatus("切分失败");
+                        setBadge("失败", "err");
+                        return;
+                    }
+                    const r = st.result || {};
+                    setStatus(`切分完成：${r.count} 个文件`);
+                    setBadge(`${r.count} 块 · 完成`, "ok");
+                    try {
+                        const dres = await fetch(`/api/download/${SL.taskId}`);
+                        if (dres.ok) {
+                            SL.resultBlob = await dres.blob();
+                            $("sl-save-sec").hidden = false;
+                        }
+                    } catch (e) { console.error(e); }
+                });
+            } catch (e) {
+                btn.disabled = false;
+                setStatus("失败：" + e.message);
+                setBadge("失败", "err");
+            }
+        });
+
+        $("sl-save").addEventListener("click", async () => {
+            if (!SL.resultBlob) return;
+            const name = await saveBlob(SL.resultBlob, SL.resultName);
+            if (name) {
+                setStatus("已保存：" + name);
+                setBadge("已保存", "ok");
+            }
+        });
+
+        // ============================================================
+        // Glow Lichen
+        // ============================================================
+        const LC = { file: null, taskId: null, resultBlob: null, resultName: "modified.litematic" };
+        const FACE_LABELS = {
+            down: "下 (down)", up: "上 (up)",
+            north: "北 (north)", south: "南 (south)",
+            east: "东 (east)", west: "西 (west)"
+        };
+        const FACE_KEYS = ["down", "up", "north", "south", "east", "west"];
+
+        FACE_KEYS.forEach(k => {
+            const div = document.createElement("label");
+            div.className = "face-item" + (k === "down" ? " checked" : "");
+            div.dataset.face = k;
+            div.innerHTML = `<input type="checkbox" ${k === "down" ? "checked" : ""}>
+                   <span class="box"></span>${FACE_LABELS[k]}`;
+            const cb = div.querySelector("input");
+            cb.addEventListener("change", () => div.classList.toggle("checked", cb.checked));
+            $("lc-faces").appendChild(div);
+        });
+
+        $("lc-faces").parentElement.querySelectorAll(".quick-row [data-only]").forEach(b => {
+            b.addEventListener("click", () => {
+                const face = b.dataset.only;
+                document.querySelectorAll("#lc-faces .face-item").forEach(el => {
+                    const on = el.dataset.face === face;
+                    el.querySelector("input").checked = on;
+                    el.classList.toggle("checked", on);
+                });
+            });
+        });
+        $("lc-faces").parentElement.querySelectorAll(".quick-row [data-all]").forEach(b => {
+            b.addEventListener("click", () => {
+                const on = b.dataset.all === "1";
+                document.querySelectorAll("#lc-faces .face-item").forEach(el => {
+                    el.querySelector("input").checked = on;
+                    el.classList.toggle("checked", on);
+                });
+            });
+        });
+
+        bindDropZone("lc-drop", "lc-file", (f) => {
+            LC.file = f;
+            showFileInfo("lc", f);
+            setStatus(`已选择：${f.name}`);
+        }, ".litematic");
+
+        $("lc-file-clear").addEventListener("click", (e) => {
+            e.stopPropagation();
+            LC.file = null;
+            clearFileInfo("lc");
+            setStatus("就绪");
+        });
+
+        $("lc-run").addEventListener("click", async () => {
+            if (!LC.file) { alert("请先上传 .litematic 文件"); return; }
+            const btn = $("lc-run");
+            btn.disabled = true;
+            $("lc-save-sec").hidden = true;
+            LC.resultBlob = null;
+            const logEl = $("lc-log");
+            logEl.textContent = "正在上传…";
+            setStatus("处理中…");
+            setBadge("处理中", "running");
+
+            const faces = {};
+            document.querySelectorAll("#lc-faces .face-item").forEach(el => {
+                faces[el.dataset.face] = el.querySelector("input").checked;
+            });
+
+            const fd = new FormData();
+            fd.append("file", LC.file);
+            fd.append("faces", JSON.stringify(faces));
+            fd.append("waterlogged", "false");
+
+            try {
+                const res = await fetch("/api/lichen/process", { method: "POST", body: fd });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "启动失败");
+                LC.taskId = data.task_id;
+                pollTask(data.task_id, logEl, async (st) => {
+                    btn.disabled = false;
+                    if (st.error) {
+                        setStatus("处理失败");
+                        setBadge("失败", "err");
+                        return;
+                    }
+                    const r = st.result || {};
+                    setStatus(`完成：替换 ${r.replaced} 个`);
+                    setBadge(`${r.replaced} 替换 · 完成`, "ok");
+                    try {
+                        const dres = await fetch(`/api/download/${LC.taskId}`);
+                        if (dres.ok) {
+                            LC.resultBlob = await dres.blob();
+                            $("lc-save-sec").hidden = false;
+                        }
+                    } catch (e) { console.error(e); }
+                });
+            } catch (e) {
+                btn.disabled = false;
+                setStatus("失败：" + e.message);
+                setBadge("失败", "err");
+            }
+        });
+
+        $("lc-save").addEventListener("click", async () => {
+            if (!LC.resultBlob) return;
+            const name = await saveBlob(LC.resultBlob, LC.resultName);
+            if (name) {
+                setStatus("已保存：" + name);
+                setBadge("已保存", "ok");
+            }
+        });
+
+        onSizeModeChange();
+    </script>
+</body>
+
+</html>
