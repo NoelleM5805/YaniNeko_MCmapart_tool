@@ -108,7 +108,7 @@ TARGET_BLOCK_ID = "minecraft:glow_lichen"
 FACE_KEYS = ["down", "up", "north", "south", "east", "west"]
 
 # 预览分辨率上限（越大越清晰越慢）
-PREVIEW_MAX_SIDE = 384
+PREVIEW_MAX_SIDE = 1024
 
 # 同色多选方块时的随机分配种子。固定种子 = 同参数同图片永远得到同一份成品，
 # 预览里的用量统计也和实际生成一致。
@@ -335,6 +335,8 @@ def make_palette(selected_ids):
 
       · 同一颜色组内只保留被选中的方块
       · 该组一个方块都没选 -> 整组从调色板移除（这个颜色不再被使用）
+      · 组内的先后顺序沿用提交上来的顺序 —— 这样前端把某个方块"置顶"之后，
+        分配策略选「只用优先项」时用的就是它
 
     selected_ids 为 None（请求里没带这个字段）时使用默认配置（每组第一个方块）；
     传了列表但结果为空 -> 返回空调色板，由调用方报错提示。
@@ -342,8 +344,14 @@ def make_palette(selected_ids):
     """
     if selected_ids is None:
         sel = set(DEFAULT_BLOCK_IDS)
+        rank = {}
     else:
-        sel = {str(x) for x in selected_ids} & ALL_BLOCK_IDS
+        seq = [str(x) for x in selected_ids]
+        rank = {}
+        for i, bid in enumerate(seq):
+            if bid in ALL_BLOCK_IDS and bid not in rank:
+                rank[bid] = i
+        sel = set(rank)
 
     groups = []
     used = set()
@@ -351,6 +359,8 @@ def make_palette(selected_ids):
         picked = [b for b in g["blocks"] if b["id"] in sel]
         if not picked:
             continue
+        # 按前端给的顺序排；没给的（默认模式）保持调色板原顺序
+        picked.sort(key=lambda b: rank.get(b["id"], 1 << 30))
         for b in picked:
             used.add(b["id"])
         groups.append({"hex": g["hex"], "rgb": g["rgb"], "blocks": picked})
@@ -834,26 +844,56 @@ def recommend_ratios(img_w, img_h, max_units=6):
 # ============================================================
 # Litematic 构建（默认地面朝向 XZ）
 # ============================================================
-def pick_block_names(idx, pal, rng):
+# 同一颜色组里勾了多个方块时，实际放哪一个：
+#   random —— 每个格子随机挑一个，纹理有自然噪点感（默认）
+#   cycle  —— 按格子顺序轮流使用，分布最均匀
+#   first  —— 只用排在最前面的那个（前端"置顶"过的优先项）
+ALLOC_MODES = ("random", "cycle", "first")
+
+ALLOC_LABELS = {
+    "random": "随机分配",
+    "cycle": "轮换分配",
+    "first": "只用优先项",
+}
+
+
+def parse_alloc(payload):
+    mode = str(payload.get("alloc") or "random").strip().lower()
+    return mode if mode in ALLOC_MODES else "random"
+
+
+def pick_block_names(idx, pal, rng, alloc="random"):
     """
     为每个像素选定实际方块名。
 
-    同一颜色组内勾选了多个方块时 —— 该颜色的每个格子随机取其中一个，
-    成品纹理会有自然的噪点感（颜色完全一致，只有方块材质不同）。
+    颜色完全一致，只有方块材质不同，所以怎么挑不影响成品颜色，
+    只影响纹理观感。三种策略见 ALLOC_MODES。
     """
     H, W = idx.shape
     names = np.empty((H, W), dtype=object)
+    flat_names = names.reshape(-1)
+    flat_idx = idx.reshape(-1)
+
     for gi, grp in enumerate(pal.groups):
         ids = [b["id"] for b in grp["blocks"]]
-        mask = (idx == gi)
+        if not ids:
+            continue
+        mask = (flat_idx == gi)
         n = int(mask.sum())
         if n == 0:
             continue
-        if len(ids) == 1:
-            names[mask] = ids[0]
+
+        if len(ids) == 1 or alloc == "first":
+            flat_names[mask] = ids[0]
+        elif alloc == "cycle":
+            # cumsum 给出该颜色第几次出现，按次数轮流取
+            occ = np.cumsum(mask) - 1
+            k = len(ids)
+            flat_names[mask] = [ids[int(o) % k] for o in occ[mask]]
         else:
-            picks = [ids[int(p)] for p in rng.integers(0, len(ids), size=n)]
-            names[mask] = picks
+            picks = rng.integers(0, len(ids), size=n)
+            flat_names[mask] = [ids[int(p)] for p in picks]
+
     return names
 
 
@@ -882,7 +922,7 @@ def count_block_usage(names):
     return out, total
 
 
-def build_mapart_schematic(idx, pal, seed=None, with_counts=False):
+def build_mapart_schematic(idx, pal, seed=None, with_counts=False, alloc="random"):
     """
     构建地图画投影：
       固定 XZ 地面朝向（图片宽 → X，图片高 → Z）
@@ -893,7 +933,7 @@ def build_mapart_schematic(idx, pal, seed=None, with_counts=False):
     """
     H, W = idx.shape
     rng = np.random.default_rng(seed)
-    names = pick_block_names(idx, pal, rng)
+    names = pick_block_names(idx, pal, rng, alloc)
     counts, _ = count_block_usage(names)
 
     # XZ 平面：Y 方向厚度为 1
@@ -933,30 +973,27 @@ def schem_to_bytes(schem):
         except OSError: pass
 
 
+def safe_stem(name):
+    """把文件名整理成安全的「主名」（不含扩展名、无非法字符）。"""
+    if not name:
+        return ""
+    name = str(name).strip().split("/")[-1].split("\\")[-1]
+    name = re.sub(r"\.litematic$", "", name, flags=re.I)
+    name = re.sub(r"\.[^.]+$", "", name)
+    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", name)
+    name = name.strip(" .")
+    return name[:80]
+
+
 def safe_litematic_name(name, fallback="mapart.litematic"):
     """
     把用户/图片文件名整理成安全的 .litematic 文件名：
     去掉路径分隔符与控制字符、限制长度、补上扩展名。
     """
-    if not name:
+    stem = safe_stem(name)
+    if not stem:
         return fallback
-    name = str(name).strip()
-    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", name)   # 非法字符
-    name = name.strip(" .")
-    if not name:
-        return fallback
-    lower = name.lower()
-    if lower.endswith(".litematic"):
-        name = name[:-len(".litematic")]
-    else:
-        # 去掉原图片的扩展名（.png / .jpg …）
-        name = os.path.splitext(name)[0]
-    name = name.strip(" .")
-    if not name:
-        return fallback
-    if len(name) > 80:
-        name = name[:80]
-    return name + ".litematic"
+    return stem + ".litematic"
 
 
 def split_boundaries(total, parts):
@@ -964,7 +1001,8 @@ def split_boundaries(total, parts):
     return [int(round(i*total/parts)) for i in range(parts+1)]
 
 
-def do_slice(content, cols, rows, progress_cb=None):
+def do_slice(content, cols, rows, progress_cb=None, base_name="slice"):
+    base = safe_stem(base_name) or "slice"
     tmp = tempfile.NamedTemporaryFile(suffix=".litematic", delete=False)
     tmp.write(content); tmp.close()
     try:
@@ -1033,11 +1071,14 @@ def do_slice(content, cols, rows, progress_cb=None):
                 except Exception:
                     pass
             sub_schem = sub.as_schematic(
-                name=f"Slice_{r+1}_{c+1}",
+                name=f"{base}_r{r+1}c{c+1}",
                 author="Toolkit",
                 description=f"Slice r{r+1}c{c+1}")
             outputs.append({
-                "filename": f"slice_{r+1}_{c+1}.litematic",
+                # 按原文件名 + 行列号命名，直接输出单个投影文件，不打包
+                "filename": f"{base}_r{r+1}c{c+1}.litematic",
+                "row": r + 1,
+                "col": c + 1,
                 "bytes": schem_to_bytes(sub_schem),
             })
             if progress_cb: progress_cb(len(outputs), total)
@@ -1352,6 +1393,7 @@ async def api_mapart_preview(payload: dict):
     strength = int(payload.get("strength", 100))
     selected = payload.get("blocks")
     adj = parse_adjust(payload)
+    alloc = parse_alloc(payload)
 
     pal, used = make_palette(selected)
     if pal.n == 0:
@@ -1389,7 +1431,7 @@ async def api_mapart_preview(payload: dict):
             side = int(payload.get("preview_side", PREVIEW_MAX_SIDE))
         except (TypeError, ValueError):
             pass
-        side = max(128, min(768, side))
+        side = max(128, min(PREVIEW_MAX_SIDE, side))
 
         if max(real_w, real_h) > side:
             scale = side / max(real_w, real_h)
@@ -1408,7 +1450,7 @@ async def api_mapart_preview(payload: dict):
         b64 = base64.b64encode(buf.getvalue()).decode()
 
         # 按成品尺寸估算用量：预览图可能被缩小过，所以用比例换算回真实方块数
-        names = pick_block_names(idx, pal, np.random.default_rng(DEFAULT_SEED))
+        names = pick_block_names(idx, pal, np.random.default_rng(DEFAULT_SEED), alloc)
         counts, _ = count_block_usage(names)
         ratio = (real_w * real_h) / float(max(1, idx.size))
         if abs(ratio - 1.0) > 1e-9:
@@ -1458,6 +1500,7 @@ async def api_mapart_generate(payload: dict):
     strength = int(payload.get("strength", 100))
     selected = payload.get("blocks")
     adj = parse_adjust(payload)
+    alloc = parse_alloc(payload)
     out_name = safe_litematic_name(payload.get("filename"))
 
     pal, used = make_palette(selected)
@@ -1508,7 +1551,7 @@ async def api_mapart_generate(payload: dict):
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
             schem, placed, counts = build_mapart_schematic(
-                idx, pal, seed=DEFAULT_SEED, with_counts=True)
+                idx, pal, seed=DEFAULT_SEED, with_counts=True, alloc=alloc)
 
             add_log(task, "保存文件…")
             data = schem_to_bytes(schem)
@@ -1556,6 +1599,7 @@ async def api_slice_process(
     file: UploadFile = File(...),
     cols: int = Form(4),
     rows: int = Form(4),
+    filename: str = Form(""),
 ):
     content = await file.read()
     tid = create_task("slice")
@@ -1565,26 +1609,32 @@ async def api_slice_process(
         try:
             c = max(1, min(64, cols))
             r = max(1, min(64, rows))
+            base = safe_stem(filename) or safe_stem(getattr(file, "filename", "")) or "slice"
             add_log(task, f"列(X)：{c}，行(Z)：{r}")
+            add_log(task, f"输出文件名前缀：{base}_r?c?.litematic")
 
             def cb(done, total):
                 if done % 5 == 0 or done == total:
                     add_log(task, f"进度：{done}/{total}")
 
             add_log(task, "正在切分…")
-            outputs = do_slice(content, c, r, progress_cb=cb)
-            add_log(task, f"生成 {len(outputs)} 个子文件")
+            outputs = do_slice(content, c, r, progress_cb=cb, base_name=base)
+            add_log(task, f"生成 {len(outputs)} 个投影文件")
 
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for o in outputs:
-                    zf.writestr(o["filename"], o["bytes"])
-            zb = buf.getvalue()
+            # 不再压成 zip，逐个文件存进任务，前端逐个下载
+            files = [{"name": o["filename"], "size": len(o["bytes"]),
+                      "row": o["row"], "col": o["col"]} for o in outputs]
+            total_bytes = sum(len(o["bytes"]) for o in outputs)
 
-            task["result_bytes"] = zb
-            task["result_name"] = "slices.zip"
-            task["result"] = {"count": len(outputs), "size": len(zb)}
-            add_log(task, f"完成 ✓ {len(zb)/1024:.1f} KB")
+            task["slice_files"] = [o["bytes"] for o in outputs]
+            task["result_name"] = base
+            task["result"] = {
+                "count": len(outputs),
+                "size": total_bytes,
+                "files": files,
+                "base": base,
+            }
+            add_log(task, f"完成 ✓ {len(outputs)} 个文件，共 {total_bytes/1024:.1f} KB")
         except Exception as e:
             task["error"] = str(e)
             add_log(task, "❌ " + str(e))
@@ -1594,6 +1644,29 @@ async def api_slice_process(
 
     threading.Thread(target=worker, daemon=True).start()
     return {"ok": True, "task_id": tid}
+
+
+@app.get("/api/slice/file/{tid}/{index}")
+def api_slice_file(tid: str, index: int):
+    """切分结果里的第 index 个投影文件。"""
+    t = TASKS.get(tid)
+    files = (t or {}).get("slice_files") or []
+    if not t or index < 0 or index >= len(files):
+        return JSONResponse({"ok": False, "msg": "文件不存在"}, status_code=404)
+    name = "slice_%d.litematic" % (index + 1)
+    try:
+        name = t["result"]["files"][index]["name"]
+    except Exception:
+        pass
+    return Response(
+        content=files[index],
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(name),
+            "Content-Length": str(len(files[index])),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 # ------------------------------------------------------------
