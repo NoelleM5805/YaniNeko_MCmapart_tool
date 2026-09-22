@@ -425,6 +425,178 @@
             margin-top: 8px;
         }
 
+        /* ---------- 调色板方块选择 ---------- */
+        .pal-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            background: #f7f9fc;
+            border: 1px solid #e2e8f2;
+            border-radius: 10px;
+        }
+
+        .pal-stats {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #1e5db0;
+        }
+
+        .pal-stats .warn {
+            color: #c47f00;
+        }
+
+        .pal-panel {
+            margin-top: 10px;
+            border: 1px solid #e2e8f2;
+            border-radius: 10px;
+            background: #fff;
+            overflow: hidden;
+        }
+
+        .pal-panel[hidden] {
+            display: none;
+        }
+
+        .pal-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 12px;
+            background: #f7f9fc;
+            border-bottom: 1px solid #e2e8f2;
+        }
+
+        .pal-toolbar input[type=text] {
+            flex: 1 1 180px;
+            min-width: 130px;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .pal-list {
+            max-height: 380px;
+            overflow-y: auto;
+        }
+
+        .pal-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .pal-list::-webkit-scrollbar-thumb {
+            background: #cdd6e2;
+            border-radius: 4px;
+        }
+
+        .pal-row {
+            display: grid;
+            grid-template-columns: 22px 66px 1fr;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-bottom: 1px solid #f0f3f8;
+            transition: .13s;
+        }
+
+        .pal-row:last-child {
+            border-bottom: none;
+        }
+
+        .pal-row:hover {
+            background: #fafcff;
+        }
+
+        .pal-row.off {
+            opacity: .42;
+        }
+
+        .pal-swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            border: 1px solid rgba(0, 0, 0, .18);
+        }
+
+        .pal-hex {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 11.5px;
+            color: #5a6a80;
+            letter-spacing: .2px;
+        }
+
+        .pal-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .pal-empty {
+            padding: 18px;
+            text-align: center;
+            font-size: 12.5px;
+            color: #a0a8b8;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 10px 3px 7px;
+            border: 1px solid #d8dee8;
+            border-radius: 14px;
+            background: #fff;
+            font-size: 12px;
+            color: #4a5668;
+            cursor: pointer;
+            user-select: none;
+            transition: .13s;
+            white-space: nowrap;
+        }
+
+        .chip:hover {
+            border-color: #8fa8cc;
+            background: #f4f8ff;
+        }
+
+        .chip input {
+            display: none;
+        }
+
+        .chip .chip-box {
+            width: 13px;
+            height: 13px;
+            border-radius: 4px;
+            border: 2px solid #b8c2d0;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: .13s;
+        }
+
+        .chip.checked {
+            background: #e8f0fe;
+            border-color: #1e6fd9;
+            color: #14498f;
+            font-weight: 600;
+        }
+
+        .chip.checked .chip-box {
+            background: #1e6fd9;
+            border-color: #1a5cb0;
+        }
+
+        .chip.checked .chip-box::after {
+            content: "✓";
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
         .preview-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -763,7 +935,30 @@
             </div>
 
             <div class="section">
-                <label class="s-label">4. 尺寸设置</label>
+                <label class="s-label">4. 调色板方块（按颜色值分组）</label>
+                <div class="pal-summary">
+                    <span class="pal-stats" id="pal-count">正在加载调色板…</span>
+                    <button class="btn-small" id="pal-toggle">展开选择 ▾</button>
+                </div>
+                <div class="pal-panel" id="pal-panel" hidden>
+                    <div class="pal-toolbar">
+                        <input type="text" id="pal-search" placeholder="搜索颜色值 / 方块名…">
+                        <button class="btn-small" id="pal-all">全选</button>
+                        <button class="btn-small" id="pal-none">全不选</button>
+                        <button class="btn-small" id="pal-first">每组首个（默认）</button>
+                    </div>
+                    <div class="pal-list" id="pal-list">
+                        <div class="pal-empty">正在加载…</div>
+                    </div>
+                </div>
+                <div class="s-hint" id="pal-hint">
+                    来自 blocksArt.json 的 normal 颜色值。同色方块可在同一行里单选、多选或全不选；
+                    全不选 = 该颜色不参与配色。同一行勾选多个方块时，成品会在这几种方块间随机分配。
+                </div>
+            </div>
+
+            <div class="section">
+                <label class="s-label">5. 尺寸设置</label>
                 <div class="grid-2 mb-6">
                     <div>
                         <label class="hint">尺寸模式</label>
@@ -800,7 +995,7 @@
             </div>
 
             <div class="section">
-                <label class="s-label">5. 实时预览（点击可放大）</label>
+                <label class="s-label">6. 实时预览（点击可放大）</label>
                 <div class="preview-row">
                     <div class="preview-box" id="mp-preview-orig">
                         <div class="placeholder">原图缩略图</div>
@@ -1223,7 +1418,7 @@
         // ============================================================
         const MP = {
             file: null, sid: null, imageInfo: null,
-            taskId: null, resultBlob: null,
+            taskId: null, resultBlob: null, busy: false,
             resultName: "mapart.litematic",
             previewSeq: 0, previewTimer: null,
             lastPreviewSrc: "", lastOriginalSrc: "",
@@ -1310,6 +1505,10 @@
 
         function schedulePreview(delay = 350) {
             if (!MP.sid) return;
+            if (PAL.loaded && palEnabledGroups() === 0) {
+                setStatus("未启用任何颜色组，请先在「调色板方块」里勾选");
+                return;
+            }
             if (MP.previewTimer) clearTimeout(MP.previewTimer);
             MP.previewTimer = setTimeout(previewMap, delay);
         }
@@ -1332,6 +1531,7 @@
                 algo: $("mp-algo").value,
                 dither: $("mp-dither").value,
                 strength: parseInt($("mp-strength").value, 10) || 0,
+                ...(PAL.loaded ? { blocks: [...PAL.selected] } : {}),
             };
 
             try {
@@ -1346,9 +1546,11 @@
                 if (!data.ok) throw new Error(data.msg || "预览失败");
 
                 MP.lastPreviewSrc = data.preview;
+                const used = (data.colors_used || []).length;
                 box.innerHTML =
                     `<img class="zoomable" src="${data.preview}" alt="预览" title="点击放大">
        <div class="pal-meta">${data.width} × ${data.height} 方块 · 预览 ${data.preview_width}×${data.preview_height}</div>
+       <div class="pal-meta">用色 ${used}/${data.groups} · 可选 ${PAL.selected.size} 个方块</div>
        <span class="updating">更新中…</span>
        <span class="zoom-hint">点击放大</span>`;
                 box.classList.remove("updating");
@@ -1357,7 +1559,7 @@
                     if (MP.lastPreviewSrc) openModal(MP.lastPreviewSrc);
                 });
 
-                setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块`);
+                setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块，用色 ${used} 种`);
                 setBadge(`${data.blocks} 方块 · 预览`, "ok");
             } catch (e) {
                 if (seq !== MP.previewSeq) return;
@@ -1389,8 +1591,12 @@
 
         $("mp-generate").addEventListener("click", async () => {
             if (!MP.sid) { alert("请先上传图片"); return; }
-            const btn = $("mp-generate");
-            btn.disabled = true;
+            if (PAL.loaded && palEnabledGroups() === 0) {
+                alert("请先在「调色板方块」里至少勾选一个方块");
+                return;
+            }
+            MP.busy = true;
+            syncGenerateBtn();
             $("mp-save-sec").hidden = true;
             MP.resultBlob = null;
             const logEl = $("mp-log");
@@ -1408,6 +1614,7 @@
                 algo: $("mp-algo").value,
                 dither: $("mp-dither").value,
                 strength: parseInt($("mp-strength").value, 10) || 0,
+                ...(PAL.loaded ? { blocks: [...PAL.selected] } : {}),
             };
 
             try {
@@ -1420,7 +1627,8 @@
                 if (!data.ok) throw new Error(data.msg || "启动失败");
                 MP.taskId = data.task_id;
                 pollTask(data.task_id, logEl, async (st) => {
-                    btn.disabled = false;
+                    MP.busy = false;
+                    syncGenerateBtn();
                     if (st.error) {
                         setStatus("生成失败");
                         setBadge("失败", "err");
@@ -1439,7 +1647,8 @@
                     } catch (e) { console.error(e); }
                 });
             } catch (e) {
-                btn.disabled = false;
+                MP.busy = false;
+                syncGenerateBtn();
                 setStatus("失败：" + e.message);
                 setBadge("失败", "err");
             }
@@ -1453,6 +1662,194 @@
                 setBadge("已保存", "ok");
             }
         });
+
+        // ============================================================
+        // 调色板方块选择（按颜色值分组 · 可单选 / 多选 / 全不选）
+        // ============================================================
+        const PAL_STORE_KEY = "mapart.palette.v1";
+
+        const PAL = {
+            groups: [], defaults: [], valid: new Set(),
+            selected: new Set(), loaded: false,
+        };
+
+        function palEnabledGroups() {
+            return PAL.groups.filter(g => g.blocks.some(b => PAL.selected.has(b.id))).length;
+        }
+
+        function syncGenerateBtn() {
+            // 调色板没加载成功时不禁用：请求里不带 blocks，后端会用自己的默认配置
+            $("mp-generate").disabled =
+                MP.busy || (PAL.loaded && palEnabledGroups() === 0);
+        }
+
+        function palSave() {
+            try {
+                localStorage.setItem(PAL_STORE_KEY, JSON.stringify([...PAL.selected]));
+            } catch (e) { /* 隐私模式等场景忽略 */ }
+        }
+
+        function palRestore() {
+            try {
+                const raw = localStorage.getItem(PAL_STORE_KEY);
+                if (!raw) return null;
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr)) return null;
+                return arr.filter(id => PAL.valid.has(id));
+            } catch (e) { return null; }
+        }
+
+        // 一行里多个同色方块时，按钮只显示材质名（羊毛/地毯/玻璃/混凝土）；
+        // 独苗颜色则显示完整方块名（如 白色陶瓦）。
+        function palChipText(block, group) {
+            return group.blocks.length > 1
+                ? (block.cat_cn || block.label)
+                : block.label;
+        }
+
+        function palRowState(row, group) {
+            const on = group.blocks.some(b => PAL.selected.has(b.id));
+            row.classList.toggle("off", !on);
+        }
+
+        function palUpdateStats() {
+            if (!PAL.loaded) return;
+            const total = PAL.groups.length;
+            const enabled = palEnabledGroups();
+            const el = $("pal-count");
+            if (enabled === 0) {
+                el.innerHTML = '<span class="warn">未启用任何颜色组 —— 至少勾选一个方块才能生成</span>';
+            } else {
+                el.textContent =
+                    `已启用 ${enabled}/${total} 个颜色组 · 可选 ${PAL.selected.size} 个方块`;
+            }
+            syncGenerateBtn();
+        }
+
+        function renderPalette() {
+            const list = $("pal-list");
+            list.textContent = "";
+            const frag = document.createDocumentFragment();
+
+            PAL.groups.forEach(group => {
+                const row = document.createElement("div");
+                row.className = "pal-row";
+                row.dataset.hex = group.hex;
+                row.dataset.search = (
+                    group.hex + " " + group.rgb.join(" ") + " " +
+                    group.blocks.map(b => b.label + " " + b.cat_cn + " " + b.id).join(" ")
+                ).toLowerCase();
+
+                const sw = document.createElement("div");
+                sw.className = "pal-swatch";
+                sw.style.background = group.hex;
+                sw.title = `${group.hex}  rgb(${group.rgb.join(", ")})`;
+                row.appendChild(sw);
+
+                const hx = document.createElement("div");
+                hx.className = "pal-hex";
+                hx.textContent = group.hex;
+                row.appendChild(hx);
+
+                const chips = document.createElement("div");
+                chips.className = "pal-chips";
+
+                group.blocks.forEach(block => {
+                    const lab = document.createElement("label");
+                    const on = PAL.selected.has(block.id);
+                    lab.className = "chip" + (on ? " checked" : "");
+                    lab.dataset.id = block.id;
+                    lab.dataset.cat = block.cat;
+                    lab.title = `${block.label} · ${group.hex} · ${block.id}`;
+
+                    const cb = document.createElement("input");
+                    cb.type = "checkbox";
+                    cb.checked = on;
+
+                    const box = document.createElement("span");
+                    box.className = "chip-box";
+
+                    const txt = document.createElement("span");
+                    txt.textContent = palChipText(block, group);
+
+                    lab.append(cb, box, txt);
+                    cb.addEventListener("change", () => {
+                        if (cb.checked) PAL.selected.add(block.id);
+                        else PAL.selected.delete(block.id);
+                        lab.classList.toggle("checked", cb.checked);
+                        palRowState(row, group);
+                        palSave();
+                        palUpdateStats();
+                        schedulePreview(300);
+                    });
+                    chips.appendChild(lab);
+                });
+
+                row.appendChild(chips);
+                palRowState(row, group);
+                frag.appendChild(row);
+            });
+
+            list.appendChild(frag);
+        }
+
+        function palApply(ids) {
+            PAL.selected = new Set(ids);
+            palSave();
+            renderPalette();
+            palUpdateStats();
+            applyPalFilter();
+            schedulePreview(300);
+        }
+
+        function applyPalFilter() {
+            const q = $("pal-search").value.trim().toLowerCase();
+            document.querySelectorAll("#pal-list .pal-row").forEach(row => {
+                row.style.display = (!q || row.dataset.search.includes(q)) ? "" : "none";
+            });
+        }
+
+        $("pal-toggle").addEventListener("click", () => {
+            const panel = $("pal-panel");
+            panel.hidden = !panel.hidden;
+            $("pal-toggle").textContent = panel.hidden ? "展开选择 ▾" : "收起选择 ▴";
+        });
+
+        $("pal-search").addEventListener("input", applyPalFilter);
+
+        $("pal-all").addEventListener("click", () => palApply(PAL.valid));
+        $("pal-none").addEventListener("click", () => palApply([]));
+        $("pal-first").addEventListener("click", () => palApply(PAL.defaults));
+
+        async function loadPalette() {
+            try {
+                const res = await fetch("/api/palette");
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "加载失败");
+
+                PAL.groups = data.groups || [];
+                PAL.defaults = data.defaults || [];
+                PAL.valid = new Set();
+                PAL.groups.forEach(g => g.blocks.forEach(b => PAL.valid.add(b.id)));
+
+                const saved = palRestore();
+                PAL.selected = new Set(saved !== null ? saved : PAL.defaults);
+                PAL.loaded = true;
+
+                renderPalette();
+                palUpdateStats();
+                $("pal-hint").innerHTML =
+                    `来自 blocksArt.json 的 normal 颜色值，共 ${PAL.groups.length} 个颜色组 / ` +
+                    `${PAL.valid.size} 个方块。同色方块可在同一行里单选、多选或全不选；` +
+                    `全不选 = 该颜色不参与配色。同一行勾选多个方块时，成品会在这几种方块间随机分配。`;
+                schedulePreview(0);
+            } catch (e) {
+                $("pal-count").innerHTML = '<span class="warn">调色板加载失败</span>';
+                $("pal-list").innerHTML =
+                    '<div class="pal-empty">调色板加载失败：' + e.message + '</div>';
+                syncGenerateBtn();
+            }
+        }
 
         // ============================================================
         // 投影切分
@@ -1643,6 +2040,7 @@
         });
 
         onSizeModeChange();
+        loadPalette();
     </script>
 </body>
 

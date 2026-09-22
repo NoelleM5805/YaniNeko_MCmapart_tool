@@ -9,6 +9,12 @@
 
 地图画默认：XZ 地面朝向 · 厚度 1 · 无底板
 
+调色板：
+    来自 blocksArt.json（https://github.com/TgkRuobin/vue3-mcpixelart），
+    只取每个方块的 normal 颜色值。颜色值相同的方块归为一组，
+    前端可为每组单独挑选方块（单选 / 多选 / 全不选）。
+    blocksArt.json 缺失时回退到内置的 blocksart_data.py。
+
 依赖：
     pip install fastapi uvicorn litemapy pillow numpy python-multipart
 
@@ -16,6 +22,7 @@
     pyinstaller --noconfirm --clean --onefile --windowed ^
         --name "地图画工具箱" ^
         --add-data "index.html;." ^
+        --add-data "blocksArt.json;." ^
         --hidden-import litemapy --hidden-import nbtlib --hidden-import numpy ^
         --hidden-import anyio --hidden-import sniffio --hidden-import h11 ^
         --hidden-import click --hidden-import multipart --hidden-import python_multipart ^
@@ -70,78 +77,175 @@ PREVIEW_MAX_SIDE = 384
 
 
 # ============================================================
-# 调色板
+# 资源目录
 # ============================================================
-PALETTE = [
-    ("minecraft:white_concrete",      (207, 213, 214)),
-    ("minecraft:light_gray_concrete", (125, 125, 115)),
-    ("minecraft:gray_concrete",       (55, 58, 62)),
-    ("minecraft:black_concrete",      (8, 10, 15)),
-    ("minecraft:brown_concrete",      (96, 60, 32)),
-    ("minecraft:red_concrete",        (142, 33, 33)),
-    ("minecraft:orange_concrete",     (224, 97, 0)),
-    ("minecraft:yellow_concrete",     (241, 175, 21)),
-    ("minecraft:lime_concrete",       (94, 168, 24)),
-    ("minecraft:green_concrete",      (73, 91, 36)),
-    ("minecraft:cyan_concrete",       (21, 119, 136)),
-    ("minecraft:light_blue_concrete", (36, 137, 199)),
-    ("minecraft:blue_concrete",       (45, 47, 143)),
-    ("minecraft:purple_concrete",     (100, 32, 156)),
-    ("minecraft:magenta_concrete",    (169, 48, 159)),
-    ("minecraft:pink_concrete",       (214, 101, 143)),
-    ("minecraft:white_wool",          (234, 237, 237)),
-    ("minecraft:light_gray_wool",     (142, 142, 135)),
-    ("minecraft:gray_wool",           (63, 68, 72)),
-    ("minecraft:black_wool",          (21, 21, 26)),
-    ("minecraft:brown_wool",          (115, 72, 41)),
-    ("minecraft:red_wool",            (161, 39, 35)),
-    ("minecraft:orange_wool",         (241, 118, 20)),
-    ("minecraft:yellow_wool",         (249, 198, 40)),
-    ("minecraft:lime_wool",           (112, 185, 25)),
-    ("minecraft:green_wool",          (85, 110, 28)),
-    ("minecraft:cyan_wool",           (21, 138, 145)),
-    ("minecraft:light_blue_wool",     (58, 175, 217)),
-    ("minecraft:blue_wool",           (53, 57, 157)),
-    ("minecraft:purple_wool",         (122, 42, 173)),
-    ("minecraft:magenta_wool",        (190, 69, 180)),
-    ("minecraft:pink_wool",           (238, 141, 172)),
-    ("minecraft:stone",               (125, 125, 125)),
-    ("minecraft:andesite",            (136, 136, 136)),
-    ("minecraft:diorite",             (188, 188, 190)),
-    ("minecraft:granite",             (149, 103, 85)),
-    ("minecraft:polished_granite",    (154, 106, 89)),
-    ("minecraft:dirt",                (134, 96, 67)),
-    ("minecraft:coarse_dirt",         (119, 85, 59)),
-    ("minecraft:sand",                (219, 207, 163)),
-    ("minecraft:red_sand",            (190, 102, 33)),
-    ("minecraft:sandstone",           (216, 203, 155)),
-    ("minecraft:red_sandstone",       (181, 97, 31)),
-    ("minecraft:netherrack",          (97, 38, 38)),
-    ("minecraft:end_stone",           (219, 222, 158)),
-    ("minecraft:obsidian",            (20, 18, 29)),
-    ("minecraft:quartz_block",        (235, 229, 222)),
-    ("minecraft:terracotta",          (152, 94, 67)),
-    ("minecraft:oak_planks",          (162, 130, 78)),
-    ("minecraft:spruce_planks",       (114, 84, 48)),
-    ("minecraft:birch_planks",        (196, 179, 123)),
-    ("minecraft:jungle_planks",       (160, 115, 80)),
-    ("minecraft:acacia_planks",       (168, 90, 50)),
-    ("minecraft:dark_oak_planks",     (66, 43, 20)),
-    ("minecraft:iron_block",          (219, 219, 219)),
-    ("minecraft:gold_block",          (246, 208, 61)),
-    ("minecraft:brick",               (150, 97, 83)),
-    ("minecraft:nether_bricks",       (44, 22, 26)),
-    ("minecraft:prismarine",          (99, 156, 151)),
-    ("minecraft:dark_prismarine",     (51, 91, 75)),
-    ("minecraft:glowstone",           (172, 131, 84)),
-]
+def get_base_dir():
+    if hasattr(sys, "_MEIPASS"):
+        b = sys._MEIPASS
+        if os.path.isfile(os.path.join(b, "index.html")):
+            return b
+    sd = os.path.dirname(os.path.abspath(__file__))
+    if os.path.isfile(os.path.join(sd, "index.html")):
+        return sd
+    ed = os.path.dirname(os.path.abspath(sys.executable))
+    if os.path.isfile(os.path.join(ed, "index.html")):
+        return ed
+    cwd = os.getcwd()
+    if os.path.isfile(os.path.join(cwd, "index.html")):
+        return cwd
+    return sd
 
-PAL_NAMES = [p[0] for p in PALETTE]
-PAL_RGB = np.array([p[1] for p in PALETTE], dtype=np.float32)
-PAL_R = PAL_RGB[:, 0].astype(np.int32)
-PAL_G = PAL_RGB[:, 1].astype(np.int32)
-PAL_B = PAL_RGB[:, 2].astype(np.int32)
-N_PAL = len(PALETTE)
+
+def get_resource_path(filename):
+    """在若干候选目录里查找资源文件，找不到返回 None。"""
+    cands = []
+    if hasattr(sys, "_MEIPASS"):
+        cands.append(sys._MEIPASS)
+    cands.append(os.path.dirname(os.path.abspath(__file__)))
+    cands.append(os.path.dirname(os.path.abspath(sys.executable)))
+    cands.append(get_base_dir())
+    cands.append(os.getcwd())
+    seen = set()
+    for d in cands:
+        if d in seen:
+            continue
+        seen.add(d)
+        p = os.path.join(d, filename)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+# ============================================================
+# 调色板数据（blocksArt.json · 只取 normal 颜色值 · 同色归为一组）
+# ============================================================
+BLOCKS_ART_FILE = "blocksArt.json"
+
+
+def _parse_blocks_art(obj):
+    """blocksArt.json -> [(分类英文, 分类中文, 中文名, 英文 ID, normal hex), ...]"""
+    rows = []
+    if not isinstance(obj, list):
+        return rows
+    for cat in obj:
+        if not isinstance(cat, dict):
+            continue
+        c_eng = str(cat.get("bname_eng") or "").strip()
+        c_cn = str(cat.get("bname") or "").strip()
+        for k in cat.get("bclass") or []:
+            if not isinstance(k, dict):
+                continue
+            name_eng = str(k.get("name_eng") or "").strip()
+            normal = str(k.get("normal") or "").strip().upper()
+            if not name_eng or not normal:
+                continue
+            if not normal.startswith("#"):
+                normal = "#" + normal
+            if len(normal) != 7:
+                continue
+            try:
+                _hex_to_rgb(normal)
+            except ValueError:
+                continue
+            rows.append((c_eng, c_cn, str(k.get("name") or "").strip(), name_eng, normal))
+    return rows
+
+
+def _load_blocks_art():
+    """优先读取 blocksArt.json，失败则回退到内置 blocksart_data.py。"""
+    path = get_resource_path(BLOCKS_ART_FILE)
+    if path:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                rows = _parse_blocks_art(json.load(f))
+            if rows:
+                print("[调色板] 已载入 %s（%d 条色值）" % (path, len(rows)))
+                return rows
+            print("[调色板] %s 内容为空，改用内置数据" % path)
+        except Exception as e:
+            print("[调色板] 读取 %s 失败（%s），改用内置数据" % (path, e))
+    try:
+        from blocksart_data import BLOCKS_ART_ROWS
+        print("[调色板] 使用内置数据（%d 条色值）" % len(BLOCKS_ART_ROWS))
+        return [tuple(r) for r in BLOCKS_ART_ROWS]
+    except Exception as e:
+        print("[调色板] 内置数据不可用：%s" % e)
+        return []
+
+
+def _hex_to_rgb(h):
+    h = h.lstrip("#")
+    if len(h) != 6:
+        raise ValueError("bad hex: " + h)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _short_label(name_cn, cat_cn):
+    """去掉分类后缀，让按钮更紧凑：白色羊毛 -> 白色。"""
+    if cat_cn and name_cn.endswith(cat_cn) and len(name_cn) > len(cat_cn):
+        return name_cn[:-len(cat_cn)]
+    return name_cn
+
+
+def _build_palette_groups(rows):
+    """
+    按 normal 颜色值分组，保持 JSON 中首次出现的顺序。
+    返回：
+        [{"hex": "#ABABAB",
+          "rgb": (171, 171, 171),
+          "blocks": [{"id": "minecraft:white_wool", "label": "白色羊毛",
+                      "short": "白色", "cat": "wool", "cat_cn": "羊毛"}, ...]}, ...]
+    """
+    order = []
+    bucket = {}
+    for c_eng, c_cn, name_cn, name_eng, hexv in rows:
+        g = bucket.get(hexv)
+        if g is None:
+            g = {"hex": hexv, "rgb": _hex_to_rgb(hexv), "blocks": []}
+            bucket[hexv] = g
+            order.append(hexv)
+        bid = "minecraft:" + name_eng
+        if any(b["id"] == bid for b in g["blocks"]):
+            continue
+        g["blocks"].append({
+            "id": bid,
+            "name_eng": name_eng,
+            "label": name_cn or name_eng,
+            "short": _short_label(name_cn or name_eng, c_cn),
+            "cat": c_eng,
+            "cat_cn": c_cn,
+        })
+    return [bucket[h] for h in order]
+
+
+PALETTE_GROUPS = _build_palette_groups(_load_blocks_art())
+
+if not PALETTE_GROUPS:
+    print("=" * 60)
+    print("[错误] 调色板数据缺失。")
+    print("请确保 blocksArt.json 或 blocksart_data.py 与脚本在同一目录。")
+    print("=" * 60)
+    sys.exit(1)
+
+# 全部可选方块 ID（107 个）与「每组只选第一个」的默认配置
+ALL_BLOCK_IDS = frozenset(
+    b["id"] for g in PALETTE_GROUPS for b in g["blocks"])
+DEFAULT_BLOCK_IDS = [g["blocks"][0]["id"] for g in PALETTE_GROUPS]
+
+# 供 /api/palette 返回的静态描述
+PALETTE_META = [
+    {
+        "hex": g["hex"],
+        "rgb": list(g["rgb"]),
+        "blocks": [dict(b) for b in g["blocks"]],
+    }
+    for g in PALETTE_GROUPS
+]
+PALETTE_CATS = []
+for g in PALETTE_GROUPS:
+    for b in g["blocks"]:
+        if b["cat"] not in [c["eng"] for c in PALETTE_CATS]:
+            PALETTE_CATS.append({"eng": b["cat"], "cn": b["cat_cn"]})
 
 
 # ============================================================
@@ -164,42 +268,88 @@ def rgb_to_lab(r, g, b):
     return (116*fy - 16, 500*(fx-fy), 200*(fy-fz))
 
 
-PAL_LAB = [rgb_to_lab(*c) for c in PAL_RGB]
+# ============================================================
+# 运行时调色板（按每次请求提交的方块选择构建）
+# ============================================================
+class Palette:
+    """一次请求实际使用的调色板：只包含被启用的颜色组。"""
+
+    __slots__ = ("groups", "hexes", "rgb", "r", "g", "b", "lab", "n")
+
+    def __init__(self, groups):
+        self.groups = groups
+        self.hexes = [g["hex"] for g in groups]
+        self.rgb = np.array([g["rgb"] for g in groups],
+                            dtype=np.float32).reshape(-1, 3)
+        self.r = self.rgb[:, 0].astype(np.int32)
+        self.g = self.rgb[:, 1].astype(np.int32)
+        self.b = self.rgb[:, 2].astype(np.int32)
+        self.lab = [rgb_to_lab(*g["rgb"]) for g in groups]
+        self.n = len(groups)
+
+
+def make_palette(selected_ids):
+    """
+    根据前端提交的方块 ID 列表构建调色板：
+
+      · 同一颜色组内只保留被选中的方块
+      · 该组一个方块都没选 -> 整组从调色板移除（这个颜色不再被使用）
+
+    selected_ids 为 None（请求里没带这个字段）时使用默认配置（每组第一个方块）；
+    传了列表但结果为空 -> 返回空调色板，由调用方报错提示。
+    返回 (Palette, 实际生效的方块 ID 集合)。
+    """
+    if selected_ids is None:
+        sel = set(DEFAULT_BLOCK_IDS)
+    else:
+        sel = {str(x) for x in selected_ids} & ALL_BLOCK_IDS
+
+    groups = []
+    used = set()
+    for g in PALETTE_GROUPS:
+        picked = [b for b in g["blocks"] if b["id"] in sel]
+        if not picked:
+            continue
+        for b in picked:
+            used.add(b["id"])
+        groups.append({"hex": g["hex"], "rgb": g["rgb"], "blocks": picked})
+
+    return Palette(groups), used
 
 
 # ============================================================
 # 颜色匹配算法
 # ============================================================
-def _match_euclidean(r, g, b):
-    d = (r - PAL_R)**2 + (g - PAL_G)**2 + (b - PAL_B)**2
+def _match_euclidean(r, g, b, pal):
+    d = (r - pal.r)**2 + (g - pal.g)**2 + (b - pal.b)**2
     return int(d.argmin())
 
 
-def _match_weighted(r, g, b):
-    d = 0.30*(r-PAL_R)**2 + 0.59*(g-PAL_G)**2 + 0.11*(b-PAL_B)**2
+def _match_weighted(r, g, b, pal):
+    d = 0.30*(r-pal.r)**2 + 0.59*(g-pal.g)**2 + 0.11*(b-pal.b)**2
     return int(d.argmin())
 
 
-def _match_redmean(r, g, b):
-    rmean = (r + PAL_R) * 0.5
-    dr = r - PAL_R; dg = g - PAL_G; db = b - PAL_B
+def _match_redmean(r, g, b, pal):
+    rmean = (r + pal.r) * 0.5
+    dr = r - pal.r; dg = g - pal.g; db = b - pal.b
     d = (2 + rmean/256)*dr*dr + 4*dg*dg + (2 + (255-rmean)/256)*db*db
     return int(d.argmin())
 
 
-def _match_cie76(L, a, b):
+def _match_cie76(L, a, b, pal):
     best, bd = 0, 1e30
-    for i, (pl, pa, pb) in enumerate(PAL_LAB):
+    for i, (pl, pa, pb) in enumerate(pal.lab):
         dL = L - pl; da = a - pa; db = b - pb
         d = dL*dL + da*da + db*db
         if d < bd: bd, best = d, i
     return best
 
 
-def _match_cie94(L, a, b):
+def _match_cie94(L, a, b, pal):
     best, bd = 0, 1e30
     C1 = math.hypot(a, b)
-    for i, (pl, pa, pb) in enumerate(PAL_LAB):
+    for i, (pl, pa, pb) in enumerate(pal.lab):
         C2 = math.hypot(pa, pb)
         dL = L - pl; dC = C1 - C2
         da = a - pa; db = b - pb
@@ -210,11 +360,11 @@ def _match_cie94(L, a, b):
     return best
 
 
-def _match_ciede2000(L1, a1, b1):
+def _match_ciede2000(L1, a1, b1, pal):
     best, bd = 0, 1e30
     C1 = math.hypot(a1, b1)
     C1_7 = C1 ** 7
-    for i, (L2, a2, b2) in enumerate(PAL_LAB):
+    for i, (L2, a2, b2) in enumerate(pal.lab):
         C2 = math.hypot(a2, b2)
         C2_7 = C2 ** 7
         Cbar = (C1 + C2) * 0.5
@@ -257,17 +407,19 @@ def _match_ciede2000(L1, a1, b1):
     return best
 
 
-def get_matcher(algo):
-    if algo == "euclidean": return _match_euclidean
-    if algo == "weighted": return _match_weighted
-    if algo == "redmean": return _match_redmean
+def get_matcher(algo, pal):
+    if algo == "euclidean":
+        return lambda r, g, b: _match_euclidean(r, g, b, pal)
+    if algo == "redmean":
+        return lambda r, g, b: _match_redmean(r, g, b, pal)
     if algo == "cie76":
-        return lambda r, g, b: _match_cie76(*rgb_to_lab(r, g, b))
+        return lambda r, g, b: _match_cie76(*rgb_to_lab(r, g, b), pal)
     if algo == "cie94":
-        return lambda r, g, b: _match_cie94(*rgb_to_lab(r, g, b))
+        return lambda r, g, b: _match_cie94(*rgb_to_lab(r, g, b), pal)
     if algo == "ciede2000":
-        return lambda r, g, b: _match_ciede2000(*rgb_to_lab(r, g, b))
-    return _match_weighted
+        return lambda r, g, b: _match_ciede2000(*rgb_to_lab(r, g, b), pal)
+    return lambda r, g, b: _match_weighted(r, g, b, pal)
+
 
 
 ALGO_LABELS = {
@@ -326,9 +478,9 @@ BAYER_8 = _make_bayer(8)
 # ============================================================
 # 图像处理
 # ============================================================
-def process_image(img, algo_key, dither_key, strength):
+def process_image(img, algo_key, dither_key, strength, pal):
     W, H = img.size
-    matcher = get_matcher(algo_key)
+    matcher = get_matcher(algo_key, pal)
 
     if dither_key == "none":
         arr = np.array(img, dtype=np.uint8)
@@ -339,14 +491,14 @@ def process_image(img, algo_key, dither_key, strength):
             for s in range(0, flat.shape[0], chunk):
                 e = min(s + chunk, flat.shape[0])
                 f = flat[s:e].astype(np.float32)
-                diff = f[:, None, :] - PAL_RGB[None, :, :]
+                diff = f[:, None, :] - pal.rgb[None, :, :]
                 if algo_key == "euclidean":
                     d = (diff * diff).sum(axis=-1)
                 elif algo_key == "weighted":
                     wgt = np.array([0.30, 0.59, 0.11], dtype=np.float32)
                     d = (diff * diff * wgt[None, None, :]).sum(axis=-1)
                 else:
-                    rmean = (f[:, None, 0] + PAL_RGB[None, :, 0]) * 0.5
+                    rmean = (f[:, None, 0] + pal.rgb[None, :, 0]) * 0.5
                     d = ((2 + rmean/256)*diff[:,:,0]**2
                          + 4*diff[:,:,1]**2
                          + (2 + (255-rmean)/256)*diff[:,:,2]**2)
@@ -363,7 +515,7 @@ def process_image(img, algo_key, dither_key, strength):
                     v = matcher(*key); cache[key] = v
                 out[i] = v
             idx = out.reshape(H, W)
-        return idx, PAL_RGB[idx].astype(np.uint8)
+        return idx, pal.rgb[idx].astype(np.uint8)
 
     buf = np.array(img, dtype=np.float32)
 
@@ -383,7 +535,7 @@ def process_image(img, algo_key, dither_key, strength):
                 v = matcher(*key); cache[key] = v
             out[i] = v
         idx = out.reshape(H, W)
-        return idx, PAL_RGB[idx].astype(np.uint8)
+        return idx, pal.rgb[idx].astype(np.uint8)
 
     kernel = DIFFUSION_KERNELS[dither_key]
     idx = np.zeros((H, W), dtype=np.int32)
@@ -399,7 +551,7 @@ def process_image(img, algo_key, dither_key, strength):
             if pi is None:
                 pi = matcher(rc, gc, bc); cache[key] = pi
             idx[y, x] = pi
-            pr, pg, pb = PAL_RGB[pi]
+            pr, pg, pb = pal.rgb[pi]
             er = (r - pr) * strength
             eg = (g - pg) * strength
             eb = (b - pb) * strength
@@ -409,7 +561,7 @@ def process_image(img, algo_key, dither_key, strength):
                     buf[ny, nx, 0] += er * k
                     buf[ny, nx, 1] += eg * k
                     buf[ny, nx, 2] += eb * k
-    return idx, PAL_RGB[idx].astype(np.uint8)
+    return idx, pal.rgb[idx].astype(np.uint8)
 
 
 def flatten_image(img):
@@ -468,7 +620,30 @@ def recommend_ratios(img_w, img_h, max_units=6):
 # ============================================================
 # Litematic 构建（默认地面朝向 XZ）
 # ============================================================
-def build_mapart_schematic(idx):
+def pick_block_names(idx, pal, rng):
+    """
+    为每个像素选定实际方块名。
+
+    同一颜色组内勾选了多个方块时 —— 该颜色的每个格子随机取其中一个，
+    成品纹理会有自然的噪点感（颜色完全一致，只有方块材质不同）。
+    """
+    H, W = idx.shape
+    names = np.empty((H, W), dtype=object)
+    for gi, grp in enumerate(pal.groups):
+        ids = [b["id"] for b in grp["blocks"]]
+        mask = (idx == gi)
+        n = int(mask.sum())
+        if n == 0:
+            continue
+        if len(ids) == 1:
+            names[mask] = ids[0]
+        else:
+            picks = [ids[int(p)] for p in rng.integers(0, len(ids), size=n)]
+            names[mask] = picks
+    return names
+
+
+def build_mapart_schematic(idx, pal, seed=None):
     """
     构建地图画投影：
       固定 XZ 地面朝向（图片宽 → X，图片高 → Z）
@@ -476,18 +651,22 @@ def build_mapart_schematic(idx):
       图片左上角对应 (0, 0, 0)，向右为 +X，向下为 +Z
     """
     H, W = idx.shape
+    rng = np.random.default_rng(seed)
+    names = pick_block_names(idx, pal, rng)
+
     # XZ 平面：Y 方向厚度为 1
     region = Region(0, 0, 0, W, 1, H)
     placed = 0
+    cache = {}
     for row in range(H):
         for col in range(W):
-            pi = int(idx[row, col])
-            name = PAL_NAMES[pi]
-            x = col
-            y = 0
-            z = row
+            name = names[row, col]
+            bs = cache.get(name)
+            if bs is None:
+                bs = BlockState(name)
+                cache[name] = bs
             try:
-                region[x, y, z] = BlockState(name)
+                region[col, 0, row] = bs
                 placed += 1
             except Exception:
                 pass
@@ -697,19 +876,6 @@ def finish_task(tid):
 app = FastAPI()
 
 
-def get_base_dir():
-    if hasattr(sys, "_MEIPASS"):
-        b = sys._MEIPASS
-        if os.path.isfile(os.path.join(b, "index.html")): return b
-    sd = os.path.dirname(os.path.abspath(__file__))
-    if os.path.isfile(os.path.join(sd, "index.html")): return sd
-    ed = os.path.dirname(os.path.abspath(sys.executable))
-    if os.path.isfile(os.path.join(ed, "index.html")): return ed
-    cwd = os.getcwd()
-    if os.path.isfile(os.path.join(cwd, "index.html")): return cwd
-    return sd
-
-
 @app.get("/", response_class=HTMLResponse)
 def index():
     p = os.path.join(get_base_dir(), "index.html")
@@ -718,6 +884,22 @@ def index():
             return f.read()
     except FileNotFoundError:
         return HTMLResponse("<h1>缺少 index.html</h1>", status_code=500)
+
+
+# ------------------------------------------------------------
+# 调色板（供前端渲染方块选择面板）
+# ------------------------------------------------------------
+@app.get("/api/palette")
+def api_palette():
+    return {
+        "ok": True,
+        "source": BLOCKS_ART_FILE,
+        "categories": PALETTE_CATS,
+        "groups": PALETTE_META,
+        "defaults": DEFAULT_BLOCK_IDS,
+        "total_groups": len(PALETTE_GROUPS),
+        "total_blocks": len(ALL_BLOCK_IDS),
+    }
 
 
 # ------------------------------------------------------------
@@ -773,6 +955,13 @@ async def api_mapart_preview(payload: dict):
     algo = payload.get("algo", "weighted")
     dither = payload.get("dither", "none")
     strength = int(payload.get("strength", 100))
+    selected = payload.get("blocks")
+
+    pal, used = make_palette(selected)
+    if pal.n == 0:
+        return JSONResponse(
+            {"ok": False, "msg": "没有启用任何颜色组，请至少勾选一个方块"},
+            status_code=400)
 
     try:
         if size_mode == "grid":
@@ -805,7 +994,7 @@ async def api_mapart_preview(payload: dict):
             pw, ph = real_w, real_h
 
         st = max(0.0, min(1.0, strength / 100.0))
-        _, rgb = process_image(work, algo, dither, st)
+        idx, rgb = process_image(work, algo, dither, st, pal)
         prev_img = Image.fromarray(rgb, mode="RGB")
 
         buf = io.BytesIO()
@@ -820,6 +1009,8 @@ async def api_mapart_preview(payload: dict):
             "preview_width": pw,
             "preview_height": ph,
             "blocks": real_w * real_h,
+            "groups": pal.n,
+            "colors_used": [pal.hexes[int(i)] for i in np.unique(idx)],
         }
     except Exception as e:
         traceback.print_exc()
@@ -845,6 +1036,13 @@ async def api_mapart_generate(payload: dict):
     algo = payload.get("algo", "weighted")
     dither = payload.get("dither", "none")
     strength = int(payload.get("strength", 100))
+    selected = payload.get("blocks")
+
+    pal, used = make_palette(selected)
+    if pal.n == 0:
+        return JSONResponse(
+            {"ok": False, "msg": "没有启用任何颜色组，请至少勾选一个方块"},
+            status_code=400)
 
     tid = create_task("mapart")
 
@@ -875,12 +1073,13 @@ async def api_mapart_generate(payload: dict):
 
             add_log(task, f"颜色算法：{ALGO_LABELS.get(algo, algo)}")
             add_log(task, f"抖动算法：{DITHER_LABELS.get(dither, dither)}，强度 {strength}%")
+            add_log(task, f"调色板：启用 {pal.n} 个颜色组 / {len(used)} 个方块")
             add_log(task, "处理像素…")
             st = max(0.0, min(1.0, strength / 100.0))
-            idx, _ = process_image(work, algo, dither, st)
+            idx, _ = process_image(work, algo, dither, st, pal)
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
-            schem, placed = build_mapart_schematic(idx)
+            schem, placed = build_mapart_schematic(idx, pal)
 
             add_log(task, "保存文件…")
             data = schem_to_bytes(schem)
@@ -891,6 +1090,8 @@ async def api_mapart_generate(payload: dict):
                 "width": idx.shape[1],
                 "height": idx.shape[0],
                 "placed": placed,
+                "blocks_used": len(used),
+                "groups_used": pal.n,
             }
             add_log(task, f"完成 ✓ {idx.shape[1]}×{idx.shape[0]}，{placed} 方块")
         except Exception as e:
