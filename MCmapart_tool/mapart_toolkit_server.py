@@ -10,19 +10,29 @@
 地图画默认：XZ 地面朝向 · 厚度 1 · 无底板
 
 调色板：
-    来自 blocksArt.json（https://github.com/TgkRuobin/vue3-mcpixelart），
-    只取每个方块的 normal 颜色值。颜色值相同的方块归为一组，
-    前端可为每组单独挑选方块（单选 / 多选 / 全不选）。
-    blocksArt.json 缺失时回退到内置的 blocksart_data.py。
+    来自 minecraft_blocks_mapcolor.json（工作区原始数据：颜色 + 中文方块名）。
+    方块 ID / 中文名由 Minecraft 1.21.4 官方语言文件 zh_cn.json 解析，
+    图标取自官方方块贴图并拼成 block_icons.png。
+    上面这些由 gen_blockdata.py 生成到 blockdata.py，服务端按「颜色值」分组，
+    前端在侧边栏按颜色挑选方块（单选 / 多选 / 全不选）。
+    勾选的方块颜色去重后即为匹配调色板；同色多选时成品在它们之间随机分配。
 
 依赖：
     pip install fastapi uvicorn litemapy pillow numpy python-multipart
+
+    ⚠ numpy 必须 >= 2.1（Python 3.13 / 3.14 尤其重要）。
+      numpy 1.26.x 官方并不支持 Python 3.13+，网上流传的 MINGW-W64 构建
+      在 import numpy 时就会 ACCESS_VIOLATION (0xC0000005) 直接崩溃，
+      表现为脚本连启动都进不去。检查与修复：
+          python -c "import numpy; print(numpy.__version__, numpy.__file__)"
+          python -m pip install -U "numpy>=2.1"
 
 打包：
     pyinstaller --noconfirm --clean --onefile --windowed ^
         --name "地图画工具箱" ^
         --add-data "index.html;." ^
-        --add-data "blocksArt.json;." ^
+        --add-data "block_icons.png;." ^
+        --hidden-import blockdata ^
         --hidden-import litemapy --hidden-import nbtlib --hidden-import numpy ^
         --hidden-import anyio --hidden-import sniffio --hidden-import h11 ^
         --hidden-import click --hidden-import multipart --hidden-import python_multipart ^
@@ -41,6 +51,7 @@ import socket
 import zipfile
 import tempfile
 import base64
+import colorsys
 import threading
 import traceback
 import webbrowser
@@ -48,7 +59,7 @@ from collections import OrderedDict
 from urllib.parse import quote
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 import uvicorn
@@ -74,6 +85,10 @@ FACE_KEYS = ["down", "up", "north", "south", "east", "west"]
 
 # 预览分辨率上限（越大越清晰越慢）
 PREVIEW_MAX_SIDE = 384
+
+# 同色多选方块时的随机分配种子。固定种子 = 同参数同图片永远得到同一份成品，
+# 预览里的用量统计也和实际生成一致。
+DEFAULT_SEED = 20240922
 
 
 # ============================================================
@@ -117,60 +132,11 @@ def get_resource_path(filename):
 
 
 # ============================================================
-# 调色板数据（blocksArt.json · 只取 normal 颜色值 · 同色归为一组）
+# 调色板数据（minecraft_blocks_mapcolor.json · 按颜色值分组）
 # ============================================================
-BLOCKS_ART_FILE = "blocksArt.json"
-
-
-def _parse_blocks_art(obj):
-    """blocksArt.json -> [(分类英文, 分类中文, 中文名, 英文 ID, normal hex), ...]"""
-    rows = []
-    if not isinstance(obj, list):
-        return rows
-    for cat in obj:
-        if not isinstance(cat, dict):
-            continue
-        c_eng = str(cat.get("bname_eng") or "").strip()
-        c_cn = str(cat.get("bname") or "").strip()
-        for k in cat.get("bclass") or []:
-            if not isinstance(k, dict):
-                continue
-            name_eng = str(k.get("name_eng") or "").strip()
-            normal = str(k.get("normal") or "").strip().upper()
-            if not name_eng or not normal:
-                continue
-            if not normal.startswith("#"):
-                normal = "#" + normal
-            if len(normal) != 7:
-                continue
-            try:
-                _hex_to_rgb(normal)
-            except ValueError:
-                continue
-            rows.append((c_eng, c_cn, str(k.get("name") or "").strip(), name_eng, normal))
-    return rows
-
-
-def _load_blocks_art():
-    """优先读取 blocksArt.json，失败则回退到内置 blocksart_data.py。"""
-    path = get_resource_path(BLOCKS_ART_FILE)
-    if path:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                rows = _parse_blocks_art(json.load(f))
-            if rows:
-                print("[调色板] 已载入 %s（%d 条色值）" % (path, len(rows)))
-                return rows
-            print("[调色板] %s 内容为空，改用内置数据" % path)
-        except Exception as e:
-            print("[调色板] 读取 %s 失败（%s），改用内置数据" % (path, e))
-    try:
-        from blocksart_data import BLOCKS_ART_ROWS
-        print("[调色板] 使用内置数据（%d 条色值）" % len(BLOCKS_ART_ROWS))
-        return [tuple(r) for r in BLOCKS_ART_ROWS]
-    except Exception as e:
-        print("[调色板] 内置数据不可用：%s" % e)
-        return []
+BLOCKDATA_FILE = "blockdata.py"
+BLOCK_SOURCE_FILE = "minecraft_blocks_mapcolor.json"
+ICON_FILE = "block_icons.png"
 
 
 def _hex_to_rgb(h):
@@ -180,54 +146,75 @@ def _hex_to_rgb(h):
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
-def _short_label(name_cn, cat_cn):
-    """去掉分类后缀，让按钮更紧凑：白色羊毛 -> 白色。"""
-    if cat_cn and name_cn.endswith(cat_cn) and len(name_cn) > len(cat_cn):
-        return name_cn[:-len(cat_cn)]
-    return name_cn
+def _color_sort_key(hexv):
+    """灰阶排前面（亮的在上），彩色按色相排，同色相亮的在上。"""
+    r, g, b = _hex_to_rgb(hexv)
+    h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    if s < 0.15:
+        return (0, 0.0, 1.0 - v, hexv)
+    return (1, h, 1.0 - v, hexv)
+
+
+def _load_blockdata():
+    """
+    方块表由 gen_blockdata.py 生成到 blockdata.py。
+    每行：(方块 ID, 中文名, 颜色 hex, 图标列, 图标行)
+    """
+    try:
+        import blockdata as bd
+        rows = [(str(b), str(n), str(c).upper(), int(cx), int(cy))
+                for b, n, c, cx, cy in bd.BLOCK_ROWS]
+    except Exception as e:
+        print("=" * 60)
+        print("[错误] 读不到方块数据 blockdata.py：%s" % e)
+        print("请先执行： python gen_blockdata.py")
+        print("=" * 60)
+        sys.exit(1)
+
+    if not rows:
+        print("[错误] blockdata.py 中没有方块数据。")
+        sys.exit(1)
+
+    icon = {
+        "file": str(getattr(bd, "ICON_SHEET", ICON_FILE)),
+        "size": int(getattr(bd, "ICON_SIZE", 16)),
+        "cols": int(getattr(bd, "ICON_COLS", 16)),
+        "rows": int(getattr(bd, "ICON_ROWS", 1)),
+    }
+    print("[方块表] blockdata.py：%d 个方块 / %d 种颜色"
+          % (len(rows), len({r[2] for r in rows})))
+    return rows, icon
 
 
 def _build_palette_groups(rows):
     """
-    按 normal 颜色值分组，保持 JSON 中首次出现的顺序。
-    返回：
-        [{"hex": "#ABABAB",
-          "rgb": (171, 171, 171),
-          "blocks": [{"id": "minecraft:white_wool", "label": "白色羊毛",
-                      "short": "白色", "cat": "wool", "cat_cn": "羊毛"}, ...]}, ...]
+    按颜色值分组：一个颜色一组，组内是该颜色的所有方块。
+    返回 [{"hex": "#606060", "rgb": (96, 96, 96),
+          "blocks": [{"id": "minecraft:stone", "label": "石头",
+                      "name_eng": "stone", "cx": 0, "cy": 0}, ...]}, ...]
     """
-    order = []
     bucket = {}
-    for c_eng, c_cn, name_cn, name_eng, hexv in rows:
+    for bid, label, hexv, cx, cy in rows:
         g = bucket.get(hexv)
         if g is None:
             g = {"hex": hexv, "rgb": _hex_to_rgb(hexv), "blocks": []}
             bucket[hexv] = g
-            order.append(hexv)
-        bid = "minecraft:" + name_eng
-        if any(b["id"] == bid for b in g["blocks"]):
-            continue
         g["blocks"].append({
-            "id": bid,
-            "name_eng": name_eng,
-            "label": name_cn or name_eng,
-            "short": _short_label(name_cn or name_eng, c_cn),
-            "cat": c_eng,
-            "cat_cn": c_cn,
+            "id": "minecraft:" + bid,
+            "name_eng": bid,
+            "label": label,
+            "cx": cx,
+            "cy": cy,
         })
-    return [bucket[h] for h in order]
+    for g in bucket.values():
+        g["blocks"].sort(key=lambda b: b["label"])
+    return [bucket[h] for h in sorted(bucket.keys(), key=_color_sort_key)]
 
 
-PALETTE_GROUPS = _build_palette_groups(_load_blocks_art())
+BLOCK_ROWS, ICON_META = _load_blockdata()
+PALETTE_GROUPS = _build_palette_groups(BLOCK_ROWS)
 
-if not PALETTE_GROUPS:
-    print("=" * 60)
-    print("[错误] 调色板数据缺失。")
-    print("请确保 blocksArt.json 或 blocksart_data.py 与脚本在同一目录。")
-    print("=" * 60)
-    sys.exit(1)
-
-# 全部可选方块 ID（107 个）与「每组只选第一个」的默认配置
+# 全部可选方块 ID 与「每个颜色只选一个」的默认配置
 ALL_BLOCK_IDS = frozenset(
     b["id"] for g in PALETTE_GROUPS for b in g["blocks"])
 DEFAULT_BLOCK_IDS = [g["blocks"][0]["id"] for g in PALETTE_GROUPS]
@@ -241,11 +228,12 @@ PALETTE_META = [
     }
     for g in PALETTE_GROUPS
 ]
-PALETTE_CATS = []
-for g in PALETTE_GROUPS:
-    for b in g["blocks"]:
-        if b["cat"] not in [c["eng"] for c in PALETTE_CATS]:
-            PALETTE_CATS.append({"eng": b["cat"], "cn": b["cat_cn"]})
+
+# 方块 ID -> 分组下标 / 中文名 / 颜色，用于统计与展示
+BLOCK_INDEX = {}
+for _gi, _g in enumerate(PALETTE_GROUPS):
+    for _b in _g["blocks"]:
+        BLOCK_INDEX[_b["id"]] = (_gi, _b["label"], _g["hex"])
 
 
 # ============================================================
@@ -594,6 +582,80 @@ def fit_image(img, tw, th, mode):
 
 
 # ============================================================
+# 图片调整（左侧边栏：曝光 / 亮度 / 对比度 / 锐化 / 暗角）
+# ============================================================
+ADJUST_KEYS = ("exposure", "brightness", "contrast", "sharpen", "vignette")
+
+ADJUST_LABELS = {
+    "exposure": "曝光",
+    "brightness": "亮度",
+    "contrast": "对比度",
+    "sharpen": "锐化",
+    "vignette": "暗角",
+}
+
+
+def parse_adjust(payload):
+    """从请求里取出调整参数并夹到合法范围。全为 0 时返回 None（跳过处理）。"""
+    raw = payload.get("adjust") or {}
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for k in ADJUST_KEYS:
+        try:
+            v = int(round(float(raw.get(k, 0))))
+        except (TypeError, ValueError):
+            v = 0
+        out[k] = max(-100, min(100, v))
+    if out["sharpen"] < 0:
+        out["sharpen"] = 0
+    if out["vignette"] < 0:
+        out["vignette"] = 0
+    if all(v == 0 for v in out.values()):
+        return None
+    return out
+
+
+def apply_image_adjust(img, adj):
+    """
+    在「已缩放成成品尺寸」的图上做调整，顺序：曝光 -> 亮度 -> 对比度 -> 暗角 -> 锐化。
+    暗角按成品画幅计算，所以必须先缩放再处理。
+    """
+    if not adj:
+        return img
+
+    exposure = adj.get("exposure", 0) / 100.0
+    brightness = adj.get("brightness", 0) / 100.0
+    contrast = adj.get("contrast", 0) / 100.0
+    sharpen = adj.get("sharpen", 0) / 100.0
+    vignette = adj.get("vignette", 0) / 100.0
+
+    if exposure or brightness or contrast or vignette:
+        a = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+        if exposure:
+            a = a * (2.0 ** (exposure * 1.5))          # ±1.5 档
+        if brightness:
+            a = a + brightness * 0.5                   # ±50% 亮度偏移
+        if contrast:
+            a = (a - 0.5) * (1.0 + contrast) + 0.5     # ±100% 对比度
+        a = np.clip(a, 0.0, 1.0)
+        if vignette:
+            h, w = a.shape[:2]
+            yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+            cx = max((w - 1) / 2.0, 1e-6)
+            cy = max((h - 1) / 2.0, 1e-6)
+            r = np.sqrt(((xx - cx) / cx) ** 2 + ((yy - cy) / cy) ** 2)
+            falloff = np.clip((r - 0.35) / 0.75, 0.0, 1.0) ** 1.4
+            a = a * (1.0 - vignette * falloff)[:, :, None]
+        img = Image.fromarray((a * 255.0 + 0.5).astype(np.uint8), "RGB")
+
+    if sharpen:
+        img = img.filter(ImageFilter.UnsharpMask(
+            radius=1.6, percent=int(round(sharpen * 250)), threshold=0))
+    return img
+
+
+# ============================================================
 # 比例推荐
 # ============================================================
 def recommend_ratios(img_w, img_h, max_units=6):
@@ -643,16 +705,44 @@ def pick_block_names(idx, pal, rng):
     return names
 
 
-def build_mapart_schematic(idx, pal, seed=None):
+def count_block_usage(names):
+    """
+    统计每种方块用了多少个，返回按用量倒序的列表：
+        [{"id","label","hex","count","percent"}, ...]
+    """
+    flat = names.reshape(-1)
+    total = int(flat.size)
+    tally = {}
+    for name in flat:
+        if name:
+            tally[name] = tally.get(name, 0) + 1
+    out = []
+    for bid, cnt in tally.items():
+        _, label, hexv = BLOCK_INDEX.get(bid, (None, bid, "#888888"))
+        out.append({
+            "id": bid,
+            "label": label,
+            "hex": hexv,
+            "count": cnt,
+            "percent": round(cnt * 100.0 / total, 2) if total else 0.0,
+        })
+    out.sort(key=lambda d: (-d["count"], d["label"]))
+    return out, total
+
+
+def build_mapart_schematic(idx, pal, seed=None, with_counts=False):
     """
     构建地图画投影：
       固定 XZ 地面朝向（图片宽 → X，图片高 → Z）
       厚度 1（Y 方向），无底板，只放一层地图画方块
       图片左上角对应 (0, 0, 0)，向右为 +X，向下为 +Z
+
+    with_counts=True 时额外返回每种方块的用量统计。
     """
     H, W = idx.shape
     rng = np.random.default_rng(seed)
     names = pick_block_names(idx, pal, rng)
+    counts, _ = count_block_usage(names)
 
     # XZ 平面：Y 方向厚度为 1
     region = Region(0, 0, 0, W, 1, H)
@@ -673,6 +763,8 @@ def build_mapart_schematic(idx, pal, seed=None):
     schem = region.as_schematic(
         name="MapArt", author="Toolkit",
         description=f"MapArt {W}x{H} (XZ ground)")
+    if with_counts:
+        return schem, placed, counts
     return schem, placed
 
 
@@ -887,19 +979,31 @@ def index():
 
 
 # ------------------------------------------------------------
-# 调色板（供前端渲染方块选择面板）
+# 调色板（供前端渲染按颜色分组的方块选择面板）
 # ------------------------------------------------------------
 @app.get("/api/palette")
 def api_palette():
     return {
         "ok": True,
-        "source": BLOCKS_ART_FILE,
-        "categories": PALETTE_CATS,
+        "source": BLOCK_SOURCE_FILE,
         "groups": PALETTE_META,
+        "icon": ICON_META,
         "defaults": DEFAULT_BLOCK_IDS,
         "total_groups": len(PALETTE_GROUPS),
         "total_blocks": len(ALL_BLOCK_IDS),
     }
+
+
+@app.get("/api/icons.png")
+def api_icons():
+    p = get_resource_path(ICON_META["file"])
+    if not p:
+        return JSONResponse({"ok": False, "msg": "缺少图标文件 " + ICON_META["file"]},
+                            status_code=404)
+    with open(p, "rb") as f:
+        data = f.read()
+    return Response(content=data, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ------------------------------------------------------------
@@ -956,11 +1060,12 @@ async def api_mapart_preview(payload: dict):
     dither = payload.get("dither", "none")
     strength = int(payload.get("strength", 100))
     selected = payload.get("blocks")
+    adj = parse_adjust(payload)
 
     pal, used = make_palette(selected)
     if pal.n == 0:
         return JSONResponse(
-            {"ok": False, "msg": "没有启用任何颜色组，请至少勾选一个方块"},
+            {"ok": False, "msg": "没有选择任何方块，请至少勾选一个方块"},
             status_code=400)
 
     try:
@@ -985,8 +1090,18 @@ async def api_mapart_preview(payload: dict):
             work = src.resize((iw, ih), Image.LANCZOS)
             real_w, real_h = iw, ih
 
-        if max(real_w, real_h) > PREVIEW_MAX_SIDE:
-            scale = PREVIEW_MAX_SIDE / max(real_w, real_h)
+        # 图片调整在成品尺寸上做（暗角要贴合画幅），预览与生成一致
+        work = apply_image_adjust(work, adj)
+
+        side = PREVIEW_MAX_SIDE
+        try:
+            side = int(payload.get("preview_side", PREVIEW_MAX_SIDE))
+        except (TypeError, ValueError):
+            pass
+        side = max(128, min(768, side))
+
+        if max(real_w, real_h) > side:
+            scale = side / max(real_w, real_h)
             pw = max(1, int(round(real_w * scale)))
             ph = max(1, int(round(real_h * scale)))
             work = work.resize((pw, ph), Image.LANCZOS)
@@ -1001,6 +1116,16 @@ async def api_mapart_preview(payload: dict):
         prev_img.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode()
 
+        # 按成品尺寸估算用量：预览图可能被缩小过，所以用比例换算回真实方块数
+        names = pick_block_names(idx, pal, np.random.default_rng(DEFAULT_SEED))
+        counts, _ = count_block_usage(names)
+        ratio = (real_w * real_h) / float(max(1, idx.size))
+        if abs(ratio - 1.0) > 1e-9:
+            for c in counts:
+                c["count"] = int(round(c["count"] * ratio))
+                c["percent"] = round(c["count"] * 100.0 / max(1, real_w * real_h), 2)
+            counts.sort(key=lambda d: (-d["count"], d["label"]))
+
         return {
             "ok": True,
             "preview": "data:image/png;base64," + b64,
@@ -1011,6 +1136,10 @@ async def api_mapart_preview(payload: dict):
             "blocks": real_w * real_h,
             "groups": pal.n,
             "colors_used": [pal.hexes[int(i)] for i in np.unique(idx)],
+            "counts": counts,
+            "total_blocks": real_w * real_h,
+            "estimated": abs(ratio - 1.0) > 1e-9,
+            "adjust": adj,
         }
     except Exception as e:
         traceback.print_exc()
@@ -1037,11 +1166,12 @@ async def api_mapart_generate(payload: dict):
     dither = payload.get("dither", "none")
     strength = int(payload.get("strength", 100))
     selected = payload.get("blocks")
+    adj = parse_adjust(payload)
 
     pal, used = make_palette(selected)
     if pal.n == 0:
         return JSONResponse(
-            {"ok": False, "msg": "没有启用任何颜色组，请至少勾选一个方块"},
+            {"ok": False, "msg": "没有选择任何方块，请至少勾选一个方块"},
             status_code=400)
 
     tid = create_task("mapart")
@@ -1071,15 +1201,22 @@ async def api_mapart_generate(payload: dict):
                 work = src.resize((iw, ih), Image.LANCZOS)
                 add_log(task, f"缩放后：{iw}×{ih}")
 
+            if adj:
+                add_log(task, "图片调整：" + "，".join(
+                    "%s %+d" % (ADJUST_LABELS[k], adj[k])
+                    for k in ADJUST_KEYS if adj.get(k)))
+                work = apply_image_adjust(work, adj)
+
             add_log(task, f"颜色算法：{ALGO_LABELS.get(algo, algo)}")
             add_log(task, f"抖动算法：{DITHER_LABELS.get(dither, dither)}，强度 {strength}%")
-            add_log(task, f"调色板：启用 {pal.n} 个颜色组 / {len(used)} 个方块")
+            add_log(task, f"调色板：启用 {pal.n} 个颜色 / {len(used)} 个方块")
             add_log(task, "处理像素…")
             st = max(0.0, min(1.0, strength / 100.0))
             idx, _ = process_image(work, algo, dither, st, pal)
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
-            schem, placed = build_mapart_schematic(idx, pal)
+            schem, placed, counts = build_mapart_schematic(
+                idx, pal, seed=DEFAULT_SEED, with_counts=True)
 
             add_log(task, "保存文件…")
             data = schem_to_bytes(schem)
@@ -1092,8 +1229,11 @@ async def api_mapart_generate(payload: dict):
                 "placed": placed,
                 "blocks_used": len(used),
                 "groups_used": pal.n,
+                "counts": counts,
+                "total_blocks": placed,
             }
-            add_log(task, f"完成 ✓ {idx.shape[1]}×{idx.shape[0]}，{placed} 方块")
+            add_log(task, f"完成 ✓ {idx.shape[1]}×{idx.shape[0]}，{placed} 方块，"
+                          f"用到 {len(counts)} 种方块")
         except Exception as e:
             task["error"] = str(e)
             add_log(task, "❌ " + str(e))

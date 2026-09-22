@@ -21,7 +21,7 @@
         }
 
         .app {
-            max-width: 1080px;
+            max-width: 1640px;
             margin: 0 auto;
             background: #fff;
             border-radius: 16px;
@@ -425,7 +425,7 @@
             margin-top: 8px;
         }
 
-        /* ---------- 调色板方块选择 ---------- */
+        /* ---------- 调色板方块选择（按大类组织） ---------- */
         .pal-summary {
             display: flex;
             align-items: center;
@@ -471,14 +471,14 @@
         }
 
         .pal-toolbar input[type=text] {
-            flex: 1 1 180px;
-            min-width: 130px;
+            flex: 1 1 170px;
+            min-width: 120px;
             padding: 6px 10px;
             font-size: 12px;
         }
 
         .pal-list {
-            max-height: 380px;
+            max-height: 420px;
             overflow-y: auto;
         }
 
@@ -491,48 +491,6 @@
             border-radius: 4px;
         }
 
-        .pal-row {
-            display: grid;
-            grid-template-columns: 22px 66px 1fr;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 12px;
-            border-bottom: 1px solid #f0f3f8;
-            transition: .13s;
-        }
-
-        .pal-row:last-child {
-            border-bottom: none;
-        }
-
-        .pal-row:hover {
-            background: #fafcff;
-        }
-
-        .pal-row.off {
-            opacity: .42;
-        }
-
-        .pal-swatch {
-            width: 20px;
-            height: 20px;
-            border-radius: 5px;
-            border: 1px solid rgba(0, 0, 0, .18);
-        }
-
-        .pal-hex {
-            font-family: Consolas, "Courier New", monospace;
-            font-size: 11.5px;
-            color: #5a6a80;
-            letter-spacing: .2px;
-        }
-
-        .pal-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
         .pal-empty {
             padding: 18px;
             text-align: center;
@@ -540,32 +498,142 @@
             color: #a0a8b8;
         }
 
-        .chip {
-            display: inline-flex;
+        /* 大类折叠项 */
+        .cat-item {
+            border-bottom: 1px solid #eef2f8;
+        }
+
+        .cat-item:last-child {
+            border-bottom: none;
+        }
+
+        .cat-head {
+            display: flex;
             align-items: center;
-            gap: 5px;
-            padding: 3px 10px 3px 7px;
-            border: 1px solid #d8dee8;
-            border-radius: 14px;
-            background: #fff;
-            font-size: 12px;
-            color: #4a5668;
+            gap: 8px;
+            padding: 9px 12px;
+            background: #fbfcfe;
             cursor: pointer;
             user-select: none;
             transition: .13s;
-            white-space: nowrap;
         }
 
-        .chip:hover {
+        .cat-head:hover {
+            background: #f2f7ff;
+        }
+
+        .cat-arrow {
+            width: 12px;
+            font-size: 10px;
+            color: #8fa0b8;
+            transition: transform .15s;
+        }
+
+        .cat-item.open .cat-arrow {
+            transform: rotate(90deg);
+        }
+
+        .cat-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .cat-count {
+            font-size: 11.5px;
+            color: #7a8699;
+            font-variant-numeric: tabular-nums;
+            background: #eef3fc;
+            border-radius: 10px;
+            padding: 2px 9px;
+        }
+
+        .cat-item.full .cat-count {
+            background: #d4f4dd;
+            color: #1a7a3c;
+            font-weight: 600;
+        }
+
+        .cat-item.empty .cat-count {
+            background: #fde2e2;
+            color: #b02a2a;
+            font-weight: 600;
+        }
+
+        .cat-acts {
+            margin-left: auto;
+            display: flex;
+            gap: 2px;
+        }
+
+        .cat-acts span {
+            font-size: 11.5px;
+            color: #1e6fd9;
+            padding: 2px 7px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: .13s;
+        }
+
+        .cat-acts span:hover {
+            background: #e2edff;
+        }
+
+        .cat-body {
+            display: none;
+            grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+            gap: 4px;
+            padding: 8px 12px 12px;
+            background: #fff;
+        }
+
+        .cat-item.open .cat-body {
+            display: grid;
+        }
+
+        .cat-body.no-match::after {
+            content: "无匹配方块";
+            grid-column: 1 / -1;
+            padding: 12px;
+            text-align: center;
+            font-size: 12px;
+            color: #a0a8b8;
+        }
+
+        /* 单个方块 */
+        .blk {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 7px;
+            border: 1px solid #e4e9f1;
+            border-radius: 7px;
+            background: #fff;
+            cursor: pointer;
+            user-select: none;
+            transition: .13s;
+            min-width: 0;
+        }
+
+        .blk:hover {
             border-color: #8fa8cc;
             background: #f4f8ff;
         }
 
-        .chip input {
+        .blk[hidden] {
             display: none;
         }
 
-        .chip .chip-box {
+        .blk.checked {
+            border-color: #1e6fd9;
+            background: #e8f0fe;
+        }
+
+        .blk input {
+            display: none;
+        }
+
+        .blk-box {
             width: 13px;
             height: 13px;
             border-radius: 4px;
@@ -577,24 +645,38 @@
             transition: .13s;
         }
 
-        .chip.checked {
-            background: #e8f0fe;
-            border-color: #1e6fd9;
-            color: #14498f;
-            font-weight: 600;
-        }
-
-        .chip.checked .chip-box {
+        .blk.checked .blk-box {
             background: #1e6fd9;
             border-color: #1a5cb0;
         }
 
-        .chip.checked .chip-box::after {
+        .blk.checked .blk-box::after {
             content: "✓";
             color: #fff;
             font-size: 10px;
             font-weight: 700;
             line-height: 1;
+        }
+
+        .blk-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            border: 1px solid rgba(0, 0, 0, .2);
+            flex-shrink: 0;
+        }
+
+        .blk-name {
+            font-size: 11.5px;
+            color: #4a5668;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .blk.checked .blk-name {
+            color: #14498f;
+            font-weight: 600;
         }
 
         .preview-row {
@@ -859,6 +941,372 @@
         .mt-8 {
             margin-top: 8px;
         }
+
+        /* ============================================================
+           主题变量（黑夜模式）
+           ============================================================ */
+        :root {
+            --panel: #ffffff;
+            --panel-2: #fafcff;
+            --soft: #f7f9fc;
+            --soft-2: #f0f4fa;
+            --border: #e2e8f2;
+            --border-2: #d8dee8;
+            --input-border: #c2cbd8;
+            --text: #2c3e50;
+            --text-strong: #1f2a3a;
+            --muted: #7a8699;
+            --faint: #a0a8b8;
+            --accent: #1e6fd9;
+            --accent-dark: #1e5db0;
+            --accent-soft: #e8f0fe;
+            --accent-hover: #2a7fe8;
+            --icon-px: 16px;
+            --icon-cols: 16;
+            --icon-rows: 18;
+        }
+
+        body.dark {
+            --panel: #1a1f27;
+            --panel-2: #20262f;
+            --soft: #171c24;
+            --soft-2: #212832;
+            --border: #2b333f;
+            --border-2: #333c4a;
+            --input-border: #3c4655;
+            --text: #d7dee8;
+            --text-strong: #eef3f9;
+            --muted: #8b97a8;
+            --faint: #6d7889;
+            --accent: #4b93f0;
+            --accent-dark: #7cb2f7;
+            --accent-soft: #1e3350;
+            --accent-hover: #66a5f5;
+            background: linear-gradient(135deg, #0e1116 0%, #171c24 100%);
+            color: var(--text);
+        }
+
+        /* --- 黑夜模式下覆盖既有组件 --- */
+        body.dark .app { background: var(--panel); }
+        body.dark header { background: linear-gradient(135deg, #14315c, #1b4478); }
+        body.dark .tabs { background: var(--soft-2); border-bottom-color: var(--border); }
+        body.dark .tab { color: var(--muted); }
+        body.dark .tab:hover { color: var(--accent); background: var(--accent-soft); }
+        body.dark .tab.active { color: var(--accent); background: var(--panel); border-bottom-color: var(--accent); }
+        body.dark .section > .s-label { color: var(--text); }
+        body.dark .section > .s-hint, body.dark .hint { color: var(--muted); }
+        body.dark .drop-zone { background: var(--panel-2); border-color: var(--border-2); }
+        body.dark .drop-zone:hover { background: var(--accent-soft); border-color: var(--accent); }
+        body.dark .drop-zone.has-file { background: var(--accent-soft); border-color: var(--accent); }
+        body.dark .file-name { color: var(--accent-dark); }
+        body.dark .file-size { background: var(--soft-2); border-color: var(--border-2); color: var(--muted); }
+        body.dark .ratios, body.dark .faces { background: var(--soft); border-color: var(--border); }
+        body.dark .ratio-btn, body.dark button {
+            background: var(--panel-2); border-color: var(--border-2); color: var(--text);
+        }
+        body.dark button:hover:not(:disabled) { background: var(--soft-2); border-color: var(--input-border); }
+        body.dark .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        body.dark .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+        body.dark .btn-success { background: #1f7a45; border-color: #1f7a45; color: #fff; }
+        body.dark .ratio-btn.selected { border-color: var(--accent); background: var(--accent-soft); }
+        body.dark .ratio-title { color: var(--accent-dark); }
+        body.dark select, body.dark input[type=number], body.dark input[type=text] {
+            background: var(--panel-2); border-color: var(--input-border); color: var(--text-strong);
+        }
+        body.dark .preview-box { background: var(--soft); border-color: var(--border); }
+        body.dark .preview-box img { background: var(--panel-2); }
+        body.dark .preview-box .placeholder, body.dark .pal-empty { color: var(--faint); }
+        body.dark .preview-box .caption { color: var(--muted); }
+        body.dark .preview-box .pal-meta { color: var(--accent-dark); }
+        body.dark .status-bar { background: var(--soft); border-top-color: var(--border); }
+        body.dark .badge { background: var(--accent-soft); color: var(--accent-dark); }
+        body.dark .badge.ok { background: #17361f; color: #62d492; }
+        body.dark .badge.err { background: #3a1d1d; color: #f08a8a; }
+        body.dark .badge.running { background: #3a3116; color: #e6c15c; }
+        body.dark .face-item { background: var(--panel-2); border-color: var(--border); }
+        body.dark .face-item.checked { background: var(--accent-soft); border-color: var(--accent); }
+        body.dark .file-clear:hover { background: #4a2020; color: #ff8080; }
+        body.dark .quick-row .btn-small { color: var(--text); }
+
+        /* ============================================================
+           三栏工作区
+           ============================================================ */
+        .workspace {
+            display: grid;
+            grid-template-columns: 312px minmax(0, 1fr) 272px;
+            align-items: start;
+        }
+
+        .workspace.no-left { grid-template-columns: 0 minmax(0, 1fr) 272px; }
+        .workspace.no-right { grid-template-columns: 312px minmax(0, 1fr) 0; }
+        .workspace.no-left.no-right { grid-template-columns: 0 minmax(0, 1fr) 0; }
+
+        .sidebar {
+            background: var(--soft);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            align-self: stretch;
+        }
+
+        .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
+
+        .workspace.no-left .sidebar-left,
+        .workspace.no-right .sidebar-right { display: none; }
+
+        .sb-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel);
+        }
+
+        .sb-title { font-size: 12.5px; font-weight: 700; color: var(--text); }
+
+        .sb-tabs { margin-left: auto; display: flex; gap: 3px; }
+
+        .sb-tab {
+            font-size: 11.5px; padding: 4px 10px; border-radius: 7px;
+            cursor: pointer; color: var(--muted); background: var(--soft-2);
+            border: 1px solid transparent; transition: .13s; user-select: none;
+        }
+
+        .sb-tab:hover { color: var(--accent); }
+        .sb-tab.active {
+            background: var(--accent-soft); border-color: var(--accent);
+            color: var(--accent-dark); font-weight: 700;
+        }
+
+        .sb-body { flex: 1; overflow-y: auto; max-height: 780px; padding: 10px 12px 22px; }
+
+        .sb-body::-webkit-scrollbar, .pal-list::-webkit-scrollbar,
+        .usage-list::-webkit-scrollbar { width: 8px; }
+
+        .sb-body::-webkit-scrollbar-thumb, .pal-list::-webkit-scrollbar-thumb,
+        .usage-list::-webkit-scrollbar-thumb { background: var(--input-border); border-radius: 4px; }
+
+        .sb-pane { display: none; }
+        .sb-pane.active { display: block; }
+
+        .sb-collapse {
+            font-size: 11px; color: var(--muted); background: transparent;
+            border: 1px solid var(--border-2); border-radius: 6px;
+            padding: 2px 7px; cursor: pointer;
+        }
+
+        .sb-collapse:hover { color: var(--accent); border-color: var(--accent); }
+
+        .sb-rails { display: flex; gap: 6px; padding: 8px 26px 0; }
+
+        .sb-rail {
+            font-size: 12px; padding: 5px 12px; border-radius: 8px;
+            border: 1px solid var(--border-2); background: var(--panel-2);
+            color: var(--muted); cursor: pointer; transition: .13s;
+        }
+
+        .sb-rail:hover { color: var(--accent); border-color: var(--accent); }
+        .sb-rail[hidden] { display: none; }
+
+        /* ============================================================
+           方块选择（颜色分组 + 色块 + 色号 + 图标）
+           ============================================================ */
+        .pal-toolbar {
+            display: flex; flex-wrap: wrap; align-items: center;
+            gap: 5px; margin-bottom: 8px;
+        }
+
+        .pal-toolbar input[type=text] { flex: 1 1 100%; padding: 6px 9px; font-size: 12px; }
+        .pal-toolbar .btn-small { padding: 4px 9px; font-size: 11.5px; }
+
+        .pal-stat {
+            font-size: 11.5px; color: var(--accent-dark); font-weight: 700;
+            margin-bottom: 7px; display: block;
+        }
+
+        .pal-stat .warn { color: #c47f00; }
+        body.dark .pal-stat .warn { color: #e0a83c; }
+
+        .pal-list { max-height: 640px; overflow-y: auto; padding-right: 2px; }
+
+        .pgroup {
+            border: 1px solid var(--border); border-radius: 9px; margin-bottom: 5px;
+            overflow: hidden; background: var(--panel);
+        }
+
+        .pgroup.off { opacity: .5; }
+
+        .pgroup-head {
+            display: flex; align-items: center; gap: 7px; padding: 6px 9px;
+            background: var(--panel-2); cursor: pointer; user-select: none;
+        }
+
+        .pgroup-head:hover { background: var(--accent-soft); }
+
+        .pgroup-swatch {
+            width: 18px; height: 18px; border-radius: 5px;
+            border: 1px solid rgba(0, 0, 0, .28); flex-shrink: 0;
+        }
+
+        .pgroup-hex {
+            font-family: Consolas, "Courier New", monospace; font-size: 11.5px;
+            color: var(--text); letter-spacing: .3px; font-weight: 700;
+        }
+
+        .pgroup-n {
+            font-size: 10.5px; color: var(--muted); background: var(--soft-2);
+            border-radius: 9px; padding: 1px 7px;
+        }
+
+        .pgroup.any .pgroup-n {
+            background: var(--accent-soft); color: var(--accent-dark); font-weight: 700;
+        }
+
+        .pgroup-arrow {
+            margin-left: auto; font-size: 9px; color: var(--faint); transition: transform .15s;
+        }
+
+        .pgroup.open .pgroup-arrow { transform: rotate(90deg); }
+
+        .pgroup-body { display: none; padding: 5px; gap: 2px; grid-template-columns: 1fr; }
+        .pgroup.open .pgroup-body { display: grid; }
+
+        .pblock {
+            display: flex; align-items: center; gap: 7px; padding: 3px 6px;
+            border-radius: 6px; cursor: pointer; user-select: none;
+            border: 1px solid transparent; transition: .12s;
+        }
+
+        .pblock:hover { background: var(--soft-2); }
+        .pblock.checked { background: var(--accent-soft); border-color: var(--accent); }
+        .pblock[hidden] { display: none; }
+        .pblock input { display: none; }
+
+        .pblock-box {
+            width: 12px; height: 12px; border-radius: 3px; border: 2px solid var(--input-border);
+            flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+            transition: .12s;
+        }
+
+        .pblock.checked .pblock-box { background: var(--accent); border-color: var(--accent); }
+
+        .pblock.checked .pblock-box::after {
+            content: "✓"; color: #fff; font-size: 9px; font-weight: 700; line-height: 1;
+        }
+
+        .pal-icon {
+            width: var(--icon-px); height: var(--icon-px); flex-shrink: 0;
+            background-image: url("/api/icons.png"); background-repeat: no-repeat;
+            background-size: calc(var(--icon-px) * var(--icon-cols)) calc(var(--icon-px) * var(--icon-rows));
+            image-rendering: pixelated; border-radius: 2px;
+        }
+
+        .pblock-name {
+            font-size: 11.5px; color: var(--text); overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+        }
+
+        .pblock.checked .pblock-name { color: var(--accent-dark); font-weight: 600; }
+
+        /* ============================================================
+           图片调整
+           ============================================================ */
+        .adj-row { margin-bottom: 10px; }
+
+        .adj-top {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 12px; color: var(--text); margin-bottom: 2px;
+        }
+
+        .adj-val {
+            font-family: Consolas, monospace; font-size: 11.5px; color: var(--accent-dark);
+            font-weight: 700; font-variant-numeric: tabular-nums;
+        }
+
+        .adj-row input[type=range] { width: 100%; }
+
+        /* ============================================================
+           设置面板
+           ============================================================ */
+        .set-group {
+            font-size: 11px; font-weight: 700; color: var(--muted);
+            letter-spacing: .4px; margin: 14px 0 2px;
+        }
+
+        .set-group:first-child { margin-top: 0; }
+
+        .set-row {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border);
+            font-size: 12.5px; color: var(--text);
+        }
+
+        .set-row:last-child { border-bottom: none; }
+
+        .set-row select { width: auto; min-width: 100px; padding: 4px 8px; font-size: 12px; }
+
+        .switch {
+            position: relative; width: 38px; height: 20px; border-radius: 11px;
+            background: var(--input-border); cursor: pointer; transition: .15s;
+            flex-shrink: 0; border: none; padding: 0;
+        }
+
+        .switch::after {
+            content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+            border-radius: 50%; background: #fff; transition: .15s;
+        }
+
+        .switch.on { background: var(--accent); }
+        .switch.on::after { left: 20px; }
+
+        /* ============================================================
+           底部方块用量统计
+           ============================================================ */
+        .usage {
+            margin-top: 14px; border: 1px solid var(--border); border-radius: 11px;
+            overflow: hidden; background: var(--panel);
+        }
+
+        .usage-head {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            padding: 9px 12px; background: var(--panel-2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .usage-title { font-size: 12.5px; font-weight: 700; color: var(--text); }
+        .usage-sum { font-size: 11.5px; color: var(--muted); margin-left: auto; }
+
+        .usage-list {
+            max-height: 250px; overflow-y: auto; padding: 6px 8px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 2px;
+        }
+
+        .usage-item {
+            display: flex; align-items: center; gap: 6px; padding: 3px 6px;
+            border-radius: 6px; font-size: 11.5px; color: var(--text);
+        }
+
+        .usage-item:hover { background: var(--soft-2); }
+
+        .usage-name {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            flex: 1; min-width: 0;
+        }
+
+        .usage-cnt {
+            font-family: Consolas, monospace; font-weight: 700; color: var(--accent-dark);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .usage-pct {
+            font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums;
+            min-width: 40px; text-align: right;
+        }
+
+        .usage-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--faint); }
     </style>
 </head>
 
@@ -877,157 +1325,294 @@
 
         <div class="tab-panel active" data-panel="mapart">
 
-            <div class="section">
-                <label class="s-label">1. 上传图片</label>
-                <div class="drop-zone" id="mp-drop">
-                    <input type="file" hidden accept="image/*" id="mp-file">
-                    <div class="drop-icon">🖼️</div>
-                    <div class="drop-title">点击选择图片，或拖到这里</div>
-                    <div class="drop-sub">支持 PNG / JPG / BMP / GIF / WebP</div>
-                    <div class="file-info" id="mp-file-info" hidden>
-                        <span class="file-name" id="mp-file-name"></span>
-                        <span class="file-size" id="mp-file-size"></span>
-                        <button class="file-clear" id="mp-file-clear" title="移除">✕</button>
-                    </div>
-                </div>
+            <div class="sb-rails">
+                <button class="sb-rail" id="rail-left" hidden>&#9656; 方块 / 图片</button>
+                <button class="sb-rail" id="rail-right" hidden>设置 &#9666;</button>
             </div>
 
-            <div class="section">
-                <label class="s-label">2. 推荐比例（点击套用）</label>
-                <div class="ratios" id="mp-ratios">
-                    <div class="empty">上传图片后自动分析并给出推荐</div>
-                </div>
-                <div class="s-hint">每格 = 128 × 128 方块</div>
-            </div>
+            <div class="workspace" id="mp-workspace">
 
-            <div class="section">
-                <label class="s-label">3. 算法选择</label>
-                <div class="grid-2 mb-6">
-                    <div>
-                        <label class="hint">颜色匹配算法</label>
-                        <select id="mp-algo">
-                            <option value="weighted" selected>加权 RGB（推荐）</option>
-                            <option value="euclidean">欧几里得 RGB（最快）</option>
-                            <option value="redmean">Redmean</option>
-                            <option value="cie76">CIE76</option>
-                            <option value="cie94">CIE94</option>
-                            <option value="ciede2000">CIEDE2000（最精确）</option>
-                        </select>
+                <!-- ================= 左侧边栏：方块选择 + 图片调整 ================= -->
+                <aside class="sidebar sidebar-left">
+                    <div class="sb-head">
+                        <span class="sb-title">输入</span>
+                        <div class="sb-tabs">
+                            <span class="sb-tab active" data-sb="blocks">方块选择</span>
+                            <span class="sb-tab" data-sb="adjust">图片调整</span>
+                        </div>
+                        <button class="sb-collapse" id="sb-left-hide" title="收起侧边栏">&#9666;</button>
                     </div>
-                    <div>
-                        <label class="hint">抖动算法</label>
-                        <select id="mp-dither">
-                            <option value="none" selected>无抖动（直接匹配）</option>
-                            <option value="bayer4">Bayer 4×4</option>
-                            <option value="bayer8">Bayer 8×8</option>
-                            <option value="floyd">Floyd-Steinberg</option>
-                            <option value="atkinson">Atkinson</option>
-                            <option value="jarvis">Jarvis-Judice-Ninke</option>
-                            <option value="stucki">Stucki</option>
-                            <option value="burkes">Burkes</option>
-                            <option value="sierra">Sierra</option>
-                            <option value="sierra_lite">Sierra-Lite</option>
-                        </select>
-                    </div>
-                </div>
-                <label class="hint">抖动强度：<span id="mp-strength-val">100</span>%</label>
-                <input type="range" id="mp-strength" min="0" max="100" value="100">
-            </div>
+                    <div class="sb-body">
 
-            <div class="section">
-                <label class="s-label">4. 调色板方块（按颜色值分组）</label>
-                <div class="pal-summary">
-                    <span class="pal-stats" id="pal-count">正在加载调色板…</span>
-                    <button class="btn-small" id="pal-toggle">展开选择 ▾</button>
-                </div>
-                <div class="pal-panel" id="pal-panel" hidden>
-                    <div class="pal-toolbar">
-                        <input type="text" id="pal-search" placeholder="搜索颜色值 / 方块名…">
-                        <button class="btn-small" id="pal-all">全选</button>
-                        <button class="btn-small" id="pal-none">全不选</button>
-                        <button class="btn-small" id="pal-first">每组首个（默认）</button>
-                    </div>
-                    <div class="pal-list" id="pal-list">
-                        <div class="pal-empty">正在加载…</div>
-                    </div>
-                </div>
-                <div class="s-hint" id="pal-hint">
-                    来自 blocksArt.json 的 normal 颜色值。同色方块可在同一行里单选、多选或全不选；
-                    全不选 = 该颜色不参与配色。同一行勾选多个方块时，成品会在这几种方块间随机分配。
-                </div>
-            </div>
+                        <div class="sb-pane active" data-pane="blocks">
+                            <span class="pal-stat" id="pal-count">正在加载方块表…</span>
+                            <div class="pal-toolbar">
+                                <input type="text" id="pal-search" placeholder="搜索方块名 / 色号…">
+                                <button class="btn-small" id="pal-all">全选</button>
+                                <button class="btn-small" id="pal-none">全不选</button>
+                                <button class="btn-small" id="pal-first">每色一个</button>
+                                <button class="btn-small" id="pal-undo">撤销</button>
+                            </div>
+                            <div class="pal-list" id="pal-list">
+                                <div class="pal-empty">正在加载…</div>
+                            </div>
+                        </div>
 
-            <div class="section">
-                <label class="s-label">5. 尺寸设置</label>
-                <div class="grid-2 mb-6">
-                    <div>
-                        <label class="hint">尺寸模式</label>
-                        <select id="mp-size-mode">
-                            <option value="grid" selected>网格比例（每格 128）</option>
-                            <option value="maxsize">按最大边长</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="hint">缩放方式</label>
-                        <select id="mp-fit">
-                            <option value="stretch" selected>拉伸（铺满）</option>
-                            <option value="fit">适应（留白边）</option>
-                            <option value="fill">填充（裁剪溢出）</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="grid-2" id="mp-grid-fields">
-                    <div>
-                        <label class="hint">X 格数（每格 128）</label>
-                        <input type="number" id="mp-grid-x" value="1" min="1" max="16">
-                    </div>
-                    <div>
-                        <label class="hint">Y 格数（每格 128）</label>
-                        <input type="number" id="mp-grid-y" value="1" min="1" max="16">
-                    </div>
-                </div>
-                <div class="grid-2" id="mp-max-fields" style="display:none">
-                    <div>
-                        <label class="hint">最长边（方块）</label>
-                        <input type="number" id="mp-max-size" value="128" min="8" max="512">
-                    </div>
-                </div>
-            </div>
+                        <div class="sb-pane" data-pane="adjust">
+                            <div class="hint mb-6">
+                                调整会作用在成品尺寸上，预览与最终生成的投影完全一致。
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>曝光</span><span class="adj-val" id="adj-exposure-v">0</span>
+                                </div>
+                                <input type="range" id="adj-exposure" min="-100" max="100" value="0"
+                                       title="整体明暗，按档位放大（±1.5 档）">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>亮度</span><span class="adj-val" id="adj-brightness-v">0</span>
+                                </div>
+                                <input type="range" id="adj-brightness" min="-100" max="100" value="0"
+                                       title="直接加减亮度">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>对比度</span><span class="adj-val" id="adj-contrast-v">0</span>
+                                </div>
+                                <input type="range" id="adj-contrast" min="-100" max="100" value="0"
+                                       title="以中灰为轴拉开/压缩层次">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>锐化</span><span class="adj-val" id="adj-sharpen-v">0</span>
+                                </div>
+                                <input type="range" id="adj-sharpen" min="0" max="100" value="0"
+                                       title="USM 锐化，让边缘更清晰">
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>暗角</span><span class="adj-val" id="adj-vignette-v">0</span>
+                                </div>
+                                <input type="range" id="adj-vignette" min="0" max="100" value="0"
+                                       title="四角压暗，突出画面中心">
+                            </div>
+                            <button class="btn-small btn-block" id="adj-reset" style="margin-top:10px">
+                                恢复默认
+                            </button>
+                        </div>
 
-            <div class="section">
-                <label class="s-label">6. 实时预览（点击可放大）</label>
-                <div class="preview-row">
-                    <div class="preview-box" id="mp-preview-orig">
-                        <div class="placeholder">原图缩略图</div>
                     </div>
-                    <div class="preview-box" id="mp-preview-pal">
-                        <div class="placeholder">调色板预览</div>
-                        <span class="updating">更新中…</span>
-                        <span class="zoom-hint">点击放大</span>
+                </aside>
+
+                <!-- ================= 主区 ================= -->
+                <main class="mp-main">
+
+                    <div class="section">
+                        <label class="s-label">1. 上传图片</label>
+                        <div class="drop-zone" id="mp-drop">
+                            <input type="file" hidden accept="image/*" id="mp-file">
+                            <div class="drop-icon">🖼️</div>
+                            <div class="drop-title">点击选择图片，或拖到这里</div>
+                            <div class="drop-sub">支持 PNG / JPG / BMP / GIF / WebP</div>
+                            <div class="file-info" id="mp-file-info" hidden>
+                                <span class="file-name" id="mp-file-name"></span>
+                                <span class="file-size" id="mp-file-size"></span>
+                                <button class="file-clear" id="mp-file-clear" title="移除">✕</button>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="s-hint">调整算法、抖动、尺寸等参数时会自动刷新预览</div>
-            </div>
 
-            <div class="section">
-                <button class="btn-primary btn-block" id="mp-generate">
-                    ▶ 生成 .litematic
-                </button>
-                <div class="hint warn mt-8" style="text-align:center">
-                    生成的文件可另存为新文件，不影响原图<br>
-                    输出为地面朝向（XZ）：图片宽 → X 轴，图片高 → Z 轴，单层无底板
-                </div>
-            </div>
+                    <div class="section">
+                        <label class="s-label">2. 推荐比例（点击套用）</label>
+                        <div class="ratios" id="mp-ratios">
+                            <div class="empty">上传图片后自动分析并给出推荐</div>
+                        </div>
+                        <div class="s-hint">每格 = 128 × 128 方块</div>
+                    </div>
 
-            <div class="section" id="mp-save-sec" hidden>
-                <button class="btn-success btn-block" id="mp-save">
-                    ⬇ 保存生成的地图画文件
-                </button>
-            </div>
+                    <div class="section">
+                        <label class="s-label">3. 算法选择</label>
+                        <div class="grid-2 mb-6">
+                            <div>
+                                <label class="hint">颜色匹配算法</label>
+                                <select id="mp-algo">
+                                    <option value="weighted" selected>加权 RGB（推荐）</option>
+                                    <option value="euclidean">欧几里得 RGB（最快）</option>
+                                    <option value="redmean">Redmean</option>
+                                    <option value="cie76">CIE76</option>
+                                    <option value="cie94">CIE94</option>
+                                    <option value="ciede2000">CIEDE2000（最精确）</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="hint">抖动算法</label>
+                                <select id="mp-dither">
+                                    <option value="none" selected>无抖动（直接匹配）</option>
+                                    <option value="bayer4">Bayer 4×4</option>
+                                    <option value="bayer8">Bayer 8×8</option>
+                                    <option value="floyd">Floyd-Steinberg</option>
+                                    <option value="atkinson">Atkinson</option>
+                                    <option value="jarvis">Judice-Ninke</option>
+                                    <option value="stucki">Stucki</option>
+                                    <option value="burkes">Burkes</option>
+                                    <option value="sierra">Sierra</option>
+                                    <option value="sierra_lite">Sierra-Lite</option>
+                                </select>
+                            </div>
+                        </div>
+                        <label class="hint">抖动强度：<span id="mp-strength-val">100</span>%</label>
+                        <input type="range" id="mp-strength" min="0" max="100" value="100">
+                    </div>
 
-            <div class="section" style="margin-bottom:0">
-                <label class="s-label">处理日志</label>
-                <div class="log" id="mp-log">等待操作…</div>
+                    <div class="section">
+                        <label class="s-label">4. 尺寸设置</label>
+                        <div class="grid-2 mb-6">
+                            <div>
+                                <label class="hint">尺寸模式</label>
+                                <select id="mp-size-mode">
+                                    <option value="grid" selected>网格比例（每格 128）</option>
+                                    <option value="maxsize">按最大边长</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="hint">缩放方式</label>
+                                <select id="mp-fit">
+                                    <option value="stretch" selected>拉伸（铺满）</option>
+                                    <option value="fit">适应（留白边）</option>
+                                    <option value="fill">填充（裁剪溢出）</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-2" id="mp-grid-fields">
+                            <div>
+                                <label class="hint">X 格数（每格 128）</label>
+                                <input type="number" id="mp-grid-x" value="1" min="1" max="16">
+                            </div>
+                            <div>
+                                <label class="hint">Y 格数（每格 128）</label>
+                                <input type="number" id="mp-grid-y" value="1" min="1" max="16">
+                            </div>
+                        </div>
+                        <div class="grid-2" id="mp-max-fields" style="display:none">
+                            <div>
+                                <label class="hint">最长边（方块）</label>
+                                <input type="number" id="mp-max-size" value="128" min="8" max="512">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <label class="s-label">5. 实时预览（点击可放大）</label>
+                        <div class="preview-row">
+                            <div class="preview-box" id="mp-preview-orig">
+                                <div class="placeholder">原图缩略图</div>
+                            </div>
+                            <div class="preview-box" id="mp-preview-pal">
+                                <div class="placeholder">调色板预览</div>
+                                <span class="updating">更新中…</span>
+                                <span class="zoom-hint">点击放大</span>
+                            </div>
+                        </div>
+                        <div class="s-hint">改动算法、抖动、尺寸、方块或图片调整后会自动刷新预览</div>
+                    </div>
+
+                    <div class="section">
+                        <button class="btn-primary btn-block" id="mp-generate">
+                            ▶ 生成 .litematic
+                        </button>
+                        <div class="hint warn mt-8" style="text-align:center">
+                            生成结果可另存为新文件，不影响原图<br>
+                            输出为地面朝向（XZ）：图片宽 → X 轴，图片高 → Z 轴，单层无底板
+                        </div>
+                    </div>
+
+                    <div class="section" id="mp-save-sec" hidden>
+                        <button class="btn-success btn-block" id="mp-save">
+                            ⬇ 保存生成的地图画文件
+                        </button>
+                    </div>
+
+                    <!-- 方块用量统计 -->
+                    <div class="usage" id="mp-usage">
+                        <div class="usage-head">
+                            <span class="usage-title">方块用量统计</span>
+                            <span class="usage-sum" id="mp-usage-sum">生成或预览后显示</span>
+                        </div>
+                        <div class="usage-list" id="mp-usage-list">
+                            <div class="usage-empty">还没有数据 —— 上传图片后会自动统计预览用量</div>
+                        </div>
+                    </div>
+
+                    <div class="section" style="margin-top:18px;margin-bottom:0">
+                        <label class="s-label">处理日志</label>
+                        <div class="log" id="mp-log">等待操作…</div>
+                    </div>
+
+                </main>
+
+                <!-- ================= 右侧边栏：设置 ================= -->
+                <aside class="sidebar sidebar-right">
+                    <div class="sb-head">
+                        <button class="sb-collapse" id="sb-right-hide" title="收起侧边栏">&#9656;</button>
+                        <span class="sb-title">设置</span>
+                    </div>
+                    <div class="sb-body">
+
+                        <div class="set-group">外观</div>
+                        <div class="set-row">
+                            <span>主题</span>
+                            <select id="set-theme">
+                                <option value="light">浅色</option>
+                                <option value="dark">黑夜</option>
+                                <option value="auto">跟随系统</option>
+                            </select>
+                        </div>
+                        <div class="set-row">
+                            <span>显示方块图标</span>
+                            <button class="switch on" id="set-icons"></button>
+                        </div>
+                        <div class="set-row">
+                            <span>显示色号</span>
+                            <button class="switch on" id="set-hex"></button>
+                        </div>
+
+                        <div class="set-group">列表与预览</div>
+                        <div class="set-row">
+                            <span>图标大小</span>
+                            <select id="set-icon-px">
+                                <option value="16">16 px</option>
+                                <option value="20">20 px</option>
+                                <option value="24">24 px</option>
+                            </select>
+                        </div>
+                        <div class="set-row">
+                            <span>预览分辨率上限</span>
+                            <select id="set-preview-side">
+                                <option value="256">256 px</option>
+                                <option value="384">384 px</option>
+                                <option value="512">512 px</option>
+                            </select>
+                        </div>
+                        <div class="set-row">
+                            <span>侧边栏默认展开</span>
+                            <button class="switch on" id="set-sidebars"></button>
+                        </div>
+
+                        <div class="set-group">配置</div>
+                        <div class="set-row">
+                            <span>自动记住上次配置</span>
+                            <button class="switch on" id="set-persist"></button>
+                        </div>
+                        <div class="set-row">
+                            <span>恢复默认配置</span>
+                            <button class="btn-small" id="set-reset">重置全部设置</button>
+                        </div>
+                        <div class="hint" id="set-info" style="margin-top:12px"></div>
+
+                    </div>
+                </aside>
+
             </div>
         </div>
 
@@ -1505,8 +2090,8 @@
 
         function schedulePreview(delay = 350) {
             if (!MP.sid) return;
-            if (PAL.loaded && palEnabledGroups() === 0) {
-                setStatus("未启用任何颜色组，请先在「调色板方块」里勾选");
+            if (PAL.loaded && PAL.selected.size === 0) {
+                setStatus("未选择任何方块，请先在「方块选择」里勾选");
                 return;
             }
             if (MP.previewTimer) clearTimeout(MP.previewTimer);
@@ -1531,7 +2116,9 @@
                 algo: $("mp-algo").value,
                 dither: $("mp-dither").value,
                 strength: parseInt($("mp-strength").value, 10) || 0,
+                preview_side: CFG.previewSide,
                 ...(PAL.loaded ? { blocks: [...PAL.selected] } : {}),
+                ...(adjActive() ? { adjust: ADJ } : {}),
             };
 
             try {
@@ -1550,7 +2137,7 @@
                 box.innerHTML =
                     `<img class="zoomable" src="${data.preview}" alt="预览" title="点击放大">
        <div class="pal-meta">${data.width} × ${data.height} 方块 · 预览 ${data.preview_width}×${data.preview_height}</div>
-       <div class="pal-meta">用色 ${used}/${data.groups} · 可选 ${PAL.selected.size} 个方块</div>
+       <div class="pal-meta">实际用色 ${used} / 可用 ${data.groups} 种 · 已选 ${PAL.selected.size} 个方块</div>
        <span class="updating">更新中…</span>
        <span class="zoom-hint">点击放大</span>`;
                 box.classList.remove("updating");
@@ -1559,6 +2146,8 @@
                     if (MP.lastPreviewSrc) openModal(MP.lastPreviewSrc);
                 });
 
+                renderUsage(data.counts, data.total_blocks,
+                    data.estimated ? "预览估算" : "预览");
                 setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块，用色 ${used} 种`);
                 setBadge(`${data.blocks} 方块 · 预览`, "ok");
             } catch (e) {
@@ -1591,8 +2180,8 @@
 
         $("mp-generate").addEventListener("click", async () => {
             if (!MP.sid) { alert("请先上传图片"); return; }
-            if (PAL.loaded && palEnabledGroups() === 0) {
-                alert("请先在「调色板方块」里至少勾选一个方块");
+            if (PAL.loaded && PAL.selected.size === 0) {
+                alert("请先在「方块选择」里至少勾选一个方块");
                 return;
             }
             MP.busy = true;
@@ -1615,6 +2204,7 @@
                 dither: $("mp-dither").value,
                 strength: parseInt($("mp-strength").value, 10) || 0,
                 ...(PAL.loaded ? { blocks: [...PAL.selected] } : {}),
+                ...(adjActive() ? { adjust: ADJ } : {}),
             };
 
             try {
@@ -1637,6 +2227,7 @@
                     const r = st.result || {};
                     setStatus(`完成：${r.width}×${r.height}，${r.placed} 方块`);
                     setBadge(`${r.placed} 方块 · 完成`, "ok");
+                    renderUsage(r.counts, r.total_blocks || r.placed, "已生成");
                     try {
                         const dres = await fetch(`/api/download/${MP.taskId}`);
                         if (dres.ok) {
@@ -1664,162 +2255,331 @@
         });
 
         // ============================================================
-        // 调色板方块选择（按颜色值分组 · 可单选 / 多选 / 全不选）
+        // 配置持久化（自动记住上次用的设置）
         // ============================================================
-        const PAL_STORE_KEY = "mapart.palette.v1";
+        const CFG_KEY = "mapart.config.v2";
 
-        const PAL = {
-            groups: [], defaults: [], valid: new Set(),
-            selected: new Set(), loaded: false,
+        const CFG = {
+            persist: true,
+            theme: "auto",          // light | dark | auto
+            icons: true,
+            hex: true,
+            iconPx: 16,
+            previewSide: 384,
+            sidebarsOpen: true,
+            blocks: null,           // null = 用服务端默认
+            adjust: {},             // 曝光/亮度/...
+            form: {},               // 算法/抖动/尺寸等表单
         };
 
-        function palEnabledGroups() {
-            return PAL.groups.filter(g => g.blocks.some(b => PAL.selected.has(b.id))).length;
+        function cfgLoad() {
+            let raw = null;
+            try { raw = localStorage.getItem(CFG_KEY); } catch (e) { return; }
+            if (!raw) return;
+            try {
+                const o = JSON.parse(raw);
+                if (!o || typeof o !== "object") return;
+                if (typeof o.persist === "boolean") CFG.persist = o.persist;
+                if (!CFG.persist) return;       // 关掉记忆就不再恢复
+                ["theme", "icons", "hex", "iconPx", "previewSide",
+                    "sidebarsOpen", "blocks", "adjust", "form"].forEach(k => {
+                        if (o[k] !== undefined && o[k] !== null) CFG[k] = o[k];
+                    });
+            } catch (e) { /* 配置损坏就当没有 */ }
+        }
+
+        let cfgTimer = null;
+
+        function cfgSave(now) {
+            if (!CFG.persist) return;
+            if (cfgTimer) clearTimeout(cfgTimer);
+            const write = () => {
+                cfgTimer = null;
+                try { localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); } catch (e) { }
+            };
+            if (now) write();
+            else cfgTimer = setTimeout(write, 400);
+        }
+
+        function cfgReset() {
+            try { localStorage.removeItem(CFG_KEY); } catch (e) { }
+        }
+
+        // ============================================================
+        // 侧边栏：折叠 / 展开 / 页签
+        // ============================================================
+        const SB = { leftOpen: true, rightOpen: true };
+
+        function sbApply() {
+            const ws = $("mp-workspace");
+            ws.classList.toggle("no-left", !SB.leftOpen);
+            ws.classList.toggle("no-right", !SB.rightOpen);
+            $("rail-left").hidden = SB.leftOpen;
+            $("rail-right").hidden = SB.rightOpen;
+        }
+
+        function sbSet(left, right) {
+            SB.leftOpen = left;
+            SB.rightOpen = right;
+            CFG.sidebarsOpen = left && right;
+            sbApply();
+            cfgSave();
+        }
+
+        $("sb-left-hide").addEventListener("click", () => sbSet(false, SB.rightOpen));
+        $("sb-right-hide").addEventListener("click", () => sbSet(SB.leftOpen, false));
+        $("rail-left").addEventListener("click", () => sbSet(true, SB.rightOpen));
+        $("rail-right").addEventListener("click", () => sbSet(SB.leftOpen, true));
+
+        document.querySelectorAll(".sb-tab").forEach(tab => {
+            tab.addEventListener("click", () => {
+                const key = tab.dataset.sb;
+                document.querySelectorAll(".sb-tab").forEach(t =>
+                    t.classList.toggle("active", t === tab));
+                document.querySelectorAll(".sb-pane").forEach(p =>
+                    p.classList.toggle("active", p.dataset.pane === key));
+            });
+        });
+
+        // ============================================================
+        // 主题（黑夜模式）
+        // ============================================================
+        const mqDark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+        function applyTheme() {
+            const dark = CFG.theme === "dark" || (CFG.theme === "auto" && mqDark && mqDark.matches);
+            document.body.classList.toggle("dark", !!dark);
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute("content", dark ? "#171c24" : "#eef2f7");
+        }
+
+        if (mqDark && mqDark.addEventListener) {
+            mqDark.addEventListener("change", () => { if (CFG.theme === "auto") applyTheme(); });
+        }
+
+        // ============================================================
+        // 图片调整（左侧边栏）
+        // ============================================================
+        const ADJ_KEYS = ["exposure", "brightness", "contrast", "sharpen", "vignette"];
+        const ADJ = { exposure: 0, brightness: 0, contrast: 0, sharpen: 0, vignette: 0 };
+
+        function adjActive() {
+            return ADJ_KEYS.some(k => ADJ[k] !== 0);
+        }
+
+        function adjSyncLabels() {
+            ADJ_KEYS.forEach(k => {
+                const el = $("adj-" + k + "-v");
+                if (el) el.textContent = (ADJ[k] > 0 ? "+" : "") + ADJ[k];
+                const r = $("adj-" + k);
+                if (r && r.value !== String(ADJ[k])) r.value = ADJ[k];
+            });
+        }
+
+        function adjSet(key, val) {
+            ADJ[key] = Math.max(-100, Math.min(100, parseInt(val, 10) || 0));
+            if ((key === "sharpen" || key === "vignette") && ADJ[key] < 0) ADJ[key] = 0;
+            adjSyncLabels();
+            CFG.adjust = Object.assign({}, ADJ);
+            cfgSave();
+            schedulePreview(220);
+            setStatus("图片调整：" + (adjActive()
+                ? ADJ_KEYS.filter(k => ADJ[k]).map(k => k + " " + ADJ[k]).join("，")
+                : "无"));
+        }
+
+        ADJ_KEYS.forEach(k => {
+            const r = $("adj-" + k);
+            if (!r) return;
+            r.addEventListener("input", () => adjSet(k, r.value));
+        });
+
+        $("adj-reset").addEventListener("click", () => {
+            ADJ_KEYS.forEach(k => ADJ[k] = 0);
+            adjSyncLabels();
+            CFG.adjust = {};
+            cfgSave();
+            schedulePreview(120);
+            setStatus("图片调整已恢复默认");
+        });
+
+        // ============================================================
+        // 方块选择（按颜色分组 · 色块 + 色号 + 图标）
+        // ============================================================
+        const PAL = {
+            groups: [], defaults: [], valid: new Set(),
+            selected: new Set(), loaded: false, undo: [],
+        };
+
+        function palColorCount() {
+            let n = 0;
+            PAL.groups.forEach(g => {
+                if (g.blocks.some(b => PAL.selected.has(b.id))) n++;
+            });
+            return n;
         }
 
         function syncGenerateBtn() {
-            // 调色板没加载成功时不禁用：请求里不带 blocks，后端会用自己的默认配置
             $("mp-generate").disabled =
-                MP.busy || (PAL.loaded && palEnabledGroups() === 0);
+                MP.busy || (PAL.loaded && PAL.selected.size === 0);
         }
 
-        function palSave() {
-            try {
-                localStorage.setItem(PAL_STORE_KEY, JSON.stringify([...PAL.selected]));
-            } catch (e) { /* 隐私模式等场景忽略 */ }
+        function palPushUndo() {
+            PAL.undo.push([...PAL.selected]);
+            if (PAL.undo.length > 30) PAL.undo.shift();
         }
 
-        function palRestore() {
-            try {
-                const raw = localStorage.getItem(PAL_STORE_KEY);
-                if (!raw) return null;
-                const arr = JSON.parse(raw);
-                if (!Array.isArray(arr)) return null;
-                return arr.filter(id => PAL.valid.has(id));
-            } catch (e) { return null; }
-        }
-
-        // 一行里多个同色方块时，按钮只显示材质名（羊毛/地毯/玻璃/混凝土）；
-        // 独苗颜色则显示完整方块名（如 白色陶瓦）。
-        function palChipText(block, group) {
-            return group.blocks.length > 1
-                ? (block.cat_cn || block.label)
-                : block.label;
-        }
-
-        function palRowState(row, group) {
-            const on = group.blocks.some(b => PAL.selected.has(b.id));
-            row.classList.toggle("off", !on);
-        }
-
-        function palUpdateStats() {
+        function palStat() {
             if (!PAL.loaded) return;
-            const total = PAL.groups.length;
-            const enabled = palEnabledGroups();
             const el = $("pal-count");
-            if (enabled === 0) {
-                el.innerHTML = '<span class="warn">未启用任何颜色组 —— 至少勾选一个方块才能生成</span>';
+            if (PAL.selected.size === 0) {
+                el.innerHTML = '<span class="warn">未选择任何方块 —— 至少勾一个才能生成</span>';
             } else {
-                el.textContent =
-                    `已启用 ${enabled}/${total} 个颜色组 · 可选 ${PAL.selected.size} 个方块`;
+                el.textContent = `已选 ${PAL.selected.size}/${PAL.valid.size} 个方块 · 覆盖 ${palColorCount()} / ${PAL.groups.length} 种颜色`;
             }
             syncGenerateBtn();
+        }
+
+        function palGroupState(node, g) {
+            const on = g.blocks.filter(b => PAL.selected.has(b.id)).length;
+            node.classList.toggle("any", on > 0);
+            node.classList.toggle("off", on === 0);
+            node.querySelector(".pgroup-n").textContent = on + "/" + g.blocks.length;
+        }
+
+        function palBuildGroup(g) {
+            const node = document.createElement("div");
+            node.className = "pgroup";
+            node.dataset.hex = g.hex;
+
+            const head = document.createElement("div");
+            head.className = "pgroup-head";
+
+            const sw = document.createElement("span");
+            sw.className = "pgroup-swatch";
+            sw.style.background = g.hex;
+
+            const hex = document.createElement("span");
+            hex.className = "pgroup-hex";
+            hex.textContent = g.hex;
+            hex.title = `rgb(${g.rgb.join(", ")})`;
+
+            const n = document.createElement("span");
+            n.className = "pgroup-n";
+
+            const arrow = document.createElement("span");
+            arrow.className = "pgroup-arrow";
+            arrow.textContent = "▶";
+
+            head.append(sw, hex, n, arrow);
+            head.addEventListener("click", () => node.classList.toggle("open"));
+            node.appendChild(head);
+
+            const body = document.createElement("div");
+            body.className = "pgroup-body";
+
+            g.blocks.forEach(b => {
+                const lab = document.createElement("label");
+                const on = PAL.selected.has(b.id);
+                lab.className = "pblock" + (on ? " checked" : "");
+                lab.dataset.id = b.id;
+                lab.dataset.search = (b.label + " " + b.name_eng + " " + g.hex + " " + b.id)
+                    .toLowerCase();
+                lab.title = `${b.label} · ${g.hex} · ${b.id}`;
+
+                const cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.checked = on;
+
+                const box = document.createElement("span");
+                box.className = "pblock-box";
+
+                const icon = document.createElement("span");
+                icon.className = "pal-icon";
+                icon.style.backgroundPosition =
+                    `calc(var(--icon-px) * ${-b.cx}) calc(var(--icon-px) * ${-b.cy})`;
+                icon.style.display = CFG.icons ? "" : "none";
+
+                const name = document.createElement("span");
+                name.className = "pblock-name";
+                name.textContent = b.label;
+
+                lab.append(cb, box, icon, name);
+                cb.addEventListener("change", () => {
+                    palPushUndo();
+                    if (cb.checked) PAL.selected.add(b.id);
+                    else PAL.selected.delete(b.id);
+                    lab.classList.toggle("checked", cb.checked);
+                    palGroupState(node, g);
+                    palCommit();
+                });
+                body.appendChild(lab);
+            });
+
+            node.appendChild(body);
+            palGroupState(node, g);
+            return node;
+        }
+
+        function palCommit() {
+            CFG.blocks = [...PAL.selected];
+            cfgSave();
+            palStat();
+            schedulePreview(300);
         }
 
         function renderPalette() {
             const list = $("pal-list");
             list.textContent = "";
             const frag = document.createDocumentFragment();
-
-            PAL.groups.forEach(group => {
-                const row = document.createElement("div");
-                row.className = "pal-row";
-                row.dataset.hex = group.hex;
-                row.dataset.search = (
-                    group.hex + " " + group.rgb.join(" ") + " " +
-                    group.blocks.map(b => b.label + " " + b.cat_cn + " " + b.id).join(" ")
-                ).toLowerCase();
-
-                const sw = document.createElement("div");
-                sw.className = "pal-swatch";
-                sw.style.background = group.hex;
-                sw.title = `${group.hex}  rgb(${group.rgb.join(", ")})`;
-                row.appendChild(sw);
-
-                const hx = document.createElement("div");
-                hx.className = "pal-hex";
-                hx.textContent = group.hex;
-                row.appendChild(hx);
-
-                const chips = document.createElement("div");
-                chips.className = "pal-chips";
-
-                group.blocks.forEach(block => {
-                    const lab = document.createElement("label");
-                    const on = PAL.selected.has(block.id);
-                    lab.className = "chip" + (on ? " checked" : "");
-                    lab.dataset.id = block.id;
-                    lab.dataset.cat = block.cat;
-                    lab.title = `${block.label} · ${group.hex} · ${block.id}`;
-
-                    const cb = document.createElement("input");
-                    cb.type = "checkbox";
-                    cb.checked = on;
-
-                    const box = document.createElement("span");
-                    box.className = "chip-box";
-
-                    const txt = document.createElement("span");
-                    txt.textContent = palChipText(block, group);
-
-                    lab.append(cb, box, txt);
-                    cb.addEventListener("change", () => {
-                        if (cb.checked) PAL.selected.add(block.id);
-                        else PAL.selected.delete(block.id);
-                        lab.classList.toggle("checked", cb.checked);
-                        palRowState(row, group);
-                        palSave();
-                        palUpdateStats();
-                        schedulePreview(300);
-                    });
-                    chips.appendChild(lab);
-                });
-
-                row.appendChild(chips);
-                palRowState(row, group);
-                frag.appendChild(row);
-            });
-
+            PAL.groups.forEach(g => frag.appendChild(palBuildGroup(g)));
             list.appendChild(frag);
+            applyPalFilter();
         }
 
-        function palApply(ids) {
+        function palApply(ids, record) {
+            if (record !== false) palPushUndo();
             PAL.selected = new Set(ids);
-            palSave();
             renderPalette();
-            palUpdateStats();
-            applyPalFilter();
-            schedulePreview(300);
+            palCommit();
         }
 
         function applyPalFilter() {
             const q = $("pal-search").value.trim().toLowerCase();
-            document.querySelectorAll("#pal-list .pal-row").forEach(row => {
-                row.style.display = (!q || row.dataset.search.includes(q)) ? "" : "none";
+            document.querySelectorAll("#pal-list .pgroup").forEach(node => {
+                let hits = 0;
+                node.querySelectorAll(".pblock").forEach(lab => {
+                    const hit = !q || lab.dataset.search.includes(q);
+                    lab.hidden = !hit;
+                    if (hit) hits++;
+                });
+                node.hidden = hits === 0;
+                if (q && hits > 0) node.classList.add("open");
             });
         }
 
-        $("pal-toggle").addEventListener("click", () => {
-            const panel = $("pal-panel");
-            panel.hidden = !panel.hidden;
-            $("pal-toggle").textContent = panel.hidden ? "展开选择 ▾" : "收起选择 ▴";
-        });
+        function applyDisplayOpts() {
+            document.documentElement.style.setProperty("--icon-px", CFG.iconPx + "px");
+            document.querySelectorAll(".pal-icon").forEach(el => {
+                el.style.display = CFG.icons ? "" : "none";
+            });
+            document.querySelectorAll(".pgroup-hex").forEach(el => {
+                el.style.display = CFG.hex ? "" : "none";
+            });
+        }
 
         $("pal-search").addEventListener("input", applyPalFilter);
-
         $("pal-all").addEventListener("click", () => palApply(PAL.valid));
         $("pal-none").addEventListener("click", () => palApply([]));
         $("pal-first").addEventListener("click", () => palApply(PAL.defaults));
+        $("pal-undo").addEventListener("click", () => {
+            if (!PAL.undo.length) { setStatus("没有可撤销的选择"); return; }
+            const prev = PAL.undo.pop();
+            PAL.selected = new Set(prev);
+            renderPalette();
+            palCommit();
+            setStatus("已撤销到上一个方块选择");
+        });
 
         async function loadPalette() {
             try {
@@ -1830,25 +2590,189 @@
                 PAL.groups = data.groups || [];
                 PAL.defaults = data.defaults || [];
                 PAL.valid = new Set();
-                PAL.groups.forEach(g => g.blocks.forEach(b => PAL.valid.add(b.id)));
+                PAL.groups.forEach(g => g.blocks.forEach(b => {
+                    PAL.valid.add(b.id);
+                    BLOCK_LOOKUP[b.id] = b;
+                }));
 
-                const saved = palRestore();
+                const ic = data.icon || {};
+                if (ic.cols) document.documentElement.style.setProperty("--icon-cols", ic.cols);
+                if (ic.rows) document.documentElement.style.setProperty("--icon-rows", ic.rows);
+
+                // 恢复上次选择；里面已失效的方块会被剔掉
+                const saved = Array.isArray(CFG.blocks)
+                    ? CFG.blocks.filter(id => PAL.valid.has(id)) : null;
                 PAL.selected = new Set(saved !== null ? saved : PAL.defaults);
-                PAL.loaded = true;
 
+                PAL.loaded = true;
                 renderPalette();
-                palUpdateStats();
-                $("pal-hint").innerHTML =
-                    `来自 blocksArt.json 的 normal 颜色值，共 ${PAL.groups.length} 个颜色组 / ` +
-                    `${PAL.valid.size} 个方块。同色方块可在同一行里单选、多选或全不选；` +
-                    `全不选 = 该颜色不参与配色。同一行勾选多个方块时，成品会在这几种方块间随机分配。`;
+                applyDisplayOpts();
+                palStat();
                 schedulePreview(0);
             } catch (e) {
-                $("pal-count").innerHTML = '<span class="warn">调色板加载失败</span>';
+                $("pal-count").innerHTML = '<span class="warn">方块表加载失败</span>';
                 $("pal-list").innerHTML =
-                    '<div class="pal-empty">调色板加载失败：' + e.message + '</div>';
+                    '<div class="pal-empty">方块表加载失败：' + e.message + '</div>';
                 syncGenerateBtn();
             }
+        }
+
+        // ============================================================
+        // 底部方块用量统计
+        // ============================================================
+        function renderUsage(counts, total, note) {
+            const list = $("mp-usage-list");
+            const sum = $("mp-usage-sum");
+            list.textContent = "";
+            if (!counts || !counts.length) {
+                list.innerHTML = '<div class="usage-empty">没有可统计的数据</div>';
+                sum.textContent = "生成或预览后显示";
+                return;
+            }
+            const max = counts[0].count || 1;
+            const frag = document.createDocumentFragment();
+            counts.forEach(c => {
+                const row = document.createElement("div");
+                row.className = "usage-item";
+                row.title = `${c.label} · ${c.hex} · ${c.id}`;
+
+                const icon = document.createElement("span");
+                icon.className = "pal-icon";
+                icon.style.display = CFG.icons ? "" : "none";
+                const blk = findBlock(c.id);
+                if (blk) {
+                    icon.style.backgroundPosition =
+                        `calc(var(--icon-px) * ${-blk.cx}) calc(var(--icon-px) * ${-blk.cy})`;
+                }
+
+                const bar = document.createElement("span");
+                bar.className = "usage-bar";
+                bar.style.width = Math.max(2, Math.round(c.count / max * 34)) + "px";
+                bar.style.background = c.hex;
+
+                const name = document.createElement("span");
+                name.className = "usage-name";
+                name.textContent = c.label;
+
+                const cnt = document.createElement("span");
+                cnt.className = "usage-cnt";
+                cnt.textContent = c.count.toLocaleString();
+
+                const pct = document.createElement("span");
+                pct.className = "usage-pct";
+                pct.textContent = (c.percent != null ? c.percent : 0).toFixed(1) + "%";
+
+                row.append(icon, bar, name, cnt, pct);
+                frag.appendChild(row);
+            });
+            list.appendChild(frag);
+            sum.textContent = (note ? note + " · " : "")
+                + `共 ${counts.length} 种方块 · ${total.toLocaleString()} 个`;
+        }
+
+        const BLOCK_LOOKUP = {};
+        function findBlock(id) {
+            return BLOCK_LOOKUP[id];
+        }
+
+        // ============================================================
+        // 设置面板
+        // ============================================================
+        function switchSet(el, on) {
+            el.classList.toggle("on", !!on);
+        }
+
+        function setInfo() {
+            $("set-info").innerHTML = CFG.persist
+                ? "配置已自动保存在浏览器本地，刷新后自动恢复。"
+                : '<span style="color:#c47f00">配置记忆已关闭，刷新后会回到默认值。</span>';
+        }
+
+        function bindSwitch(id, key, onChange) {
+            const el = $(id);
+            switchSet(el, CFG[key]);
+            el.addEventListener("click", () => {
+                CFG[key] = !CFG[key];
+                switchSet(el, CFG[key]);
+                cfgSave(true);
+                if (onChange) onChange(CFG[key]);
+            });
+        }
+
+        $("set-theme").addEventListener("change", () => {
+            CFG.theme = $("set-theme").value;
+            cfgSave(true);
+            applyTheme();
+        });
+
+        $("set-icon-px").addEventListener("change", () => {
+            CFG.iconPx = parseInt($("set-icon-px").value, 10) || 16;
+            cfgSave(true);
+            applyDisplayOpts();
+        });
+
+        $("set-preview-side").addEventListener("change", () => {
+            CFG.previewSide = parseInt($("set-preview-side").value, 10) || 384;
+            cfgSave(true);
+            schedulePreview(120);
+        });
+
+        bindSwitch("set-icons", "icons", () => { applyDisplayOpts(); });
+        bindSwitch("set-hex", "hex", () => { applyDisplayOpts(); });
+        bindSwitch("set-persist", "persist", () => { setInfo(); cfgSave(true); });
+        bindSwitch("set-sidebars", "sidebarsOpen", (on) => {
+            sbSet(on, on);
+        });
+
+        $("set-reset").addEventListener("click", () => {
+            if (!confirm("恢复默认配置？方块选择、图片调整和所有设置都会重置。")) return;
+            cfgReset();
+            location.reload();
+        });
+
+        // 表单值 <-> CFG.form
+        const FORM_FIELDS = ["mp-algo", "mp-dither", "mp-strength", "mp-size-mode",
+            "mp-fit", "mp-grid-x", "mp-grid-y", "mp-max-size"];
+
+        function formCollect() {
+            const o = {};
+            FORM_FIELDS.forEach(id => { o[id] = $(id).value; });
+            return o;
+        }
+
+        function formApply(o) {
+            if (!o) return;
+            FORM_FIELDS.forEach(id => {
+                if (o[id] !== undefined && o[id] !== null) $(id).value = o[id];
+            });
+            $("mp-strength-val").textContent = $("mp-strength").value;
+        }
+
+        function formPersist() {
+            CFG.form = formCollect();
+            cfgSave();
+        }
+
+        function applySettingsToUI() {
+            $("set-theme").value = CFG.theme;
+            $("set-icon-px").value = String(CFG.iconPx);
+            $("set-preview-side").value = String(CFG.previewSide);
+            switchSet($("set-icons"), CFG.icons);
+            switchSet($("set-hex"), CFG.hex);
+            switchSet($("set-persist"), CFG.persist);
+            switchSet($("set-sidebars"), CFG.sidebarsOpen);
+            setInfo();
+        }
+
+        function initSidebars() {
+            // 窗口窄的时候默认收起，避免中间被挤没
+            const narrow = window.innerWidth < 1280;
+            const open = CFG.sidebarsOpen && !narrow;
+            SB.leftOpen = open;
+            SB.rightOpen = open;
+            $("rail-left").hidden = open;
+            $("rail-right").hidden = open;
+            sbApply();
         }
 
         // ============================================================
@@ -2039,7 +2963,30 @@
             }
         });
 
+        // ============================================================
+        // 初始化
+        // ============================================================
+        cfgLoad();
+        applySettingsToUI();
+        applyTheme();
+        formApply(CFG.form);
         onSizeModeChange();
+        initSidebars();
+
+        ADJ_KEYS.forEach(k => {
+            if (CFG.adjust && typeof CFG.adjust[k] === "number") {
+                ADJ[k] = Math.max(-100, Math.min(100, CFG.adjust[k]));
+            }
+        });
+        adjSyncLabels();
+
+        // 表单改动后顺带记进配置（防抖，跟随预览节奏）
+        FORM_FIELDS.forEach(id => {
+            const el = $(id);
+            el.addEventListener("input", formPersist);
+            el.addEventListener("change", formPersist);
+        });
+
         loadPalette();
     </script>
 </body>
