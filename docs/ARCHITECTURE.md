@@ -29,12 +29,16 @@
     │
   colorspace      sRGB → CIE Lab
     │
+  native          C++ 抖动核心的 ctypes 绑定（可选，缺了就退回纯 Python）
+    │
   palette         方块表加载 → 按颜色分组 → 每次请求的运行时调色板 Palette
     │
-  matching        6 种颜色匹配算法（欧氏/加权/redmean/CIE76/CIE94/CIEDE2000）+ 批量匹配
+  matching        6 种颜色匹配算法（欧氏/加权/redmean/CIE76/CIE94/CIEDE2000）
+                  + 批量匹配 match_batch/dist_batch
     │
   dithering       误差扩散内核 + 有序抖动 + 整图转换 process_image
     │
+  ├─ repair       局部噪点修正（套索修补 + 画笔覆盖），依赖 matching.dist_batch
   ├─ adjustments  12 项图像调整（曝光/对比/饱和/亮度/高光/暗部/色温/色调/锐化/清晰/色散/暗角）
   ├─ imageops     缩放、留边、拼贴、比例推荐
     │
@@ -63,8 +67,10 @@
 | `config` | `HOST` / `PORT` / `TASKS` / `KEEP_TASKS` / `PREVIEW_MAX_SIDE` / `DEFAULT_SEED`；`get_base_dir()` 找「含 `web/index.html` 的资源根」，`get_resource_path()` 依次找 `<root>/`、`<root>/web/`、`<root>/data/` |
 | `colorspace` | `_srgb_to_linear`、`rgb_to_lab` |
 | `palette` | `_load_blockdata()` 从 `maptool.data.blockdata` 读方块表；`_build_palette_groups()` 按颜色值分组并用 `_color_sort_key()` 排序（灰阶在前、彩色按色相）；`Palette.__slots__` 里预摊平 RGB/Lab 分量给向量化匹配用；`make_palette()` 按前端提交的方块顺序建调色板（组内顺序 = 前端顺序，所以「置顶」才有效） |
-| `matching` | `_make_dist_tables()` 预计算可分离的距离表（float64，和原来的 int 通道 + float64 算术一致）；CIE 系列用 numpy 整批算；`match_batch()` 按 `BATCH_CHUNK=8192` 分块控内存 |
-| `dithering` | `DIFFUSION_KERNELS` / `DITHER_LABELS` / `_make_bayer()`；`_diffuse_flat()` 用扁平 list + 2 格 padding + 预计算 tap 偏移、不做边界判断，是性能关键；`process_image()` 是整图入口 |
+| `matching` | `_make_dist_tables()` 预计算可分离的距离表（float64，和原来的 int 通道 + float64 算术一致）；CIE 系列用 numpy 整批算；`_dist_block()` 是一个像素块到整个调色板的距离矩阵，`match_batch()`（取 argmin）和 `dist_batch()`（要距离本身，修正功能用）都走它，保证「选哪个」和「差多少」同一套公式。DLL 可用时 `match_batch` 优先走 C++ |
+| `dithering` | `DIFFUSION_KERNELS` / `DITHER_LABELS` / `_make_bayer()`；`_diffuse_native()` 走 C++（内层循环 + 匹配都在 DLL 里），`_diffuse_flat()` 是纯 Python 回退（扁平 list + 2 格 padding + 预计算 tap 偏移、不做边界判断）；`process_image()` 是整图入口 |
+| `native` | `maptool_native.dll` 的 ctypes 绑定。`mode_for(algo)` 只对**通过全空间等价性验证**的算法返回模式号，其余返回 None 自动退回 Python；`VERIFIED` 白名单的注释里记着验证结论。`PaletteHandle` 会持有传进去的 numpy 数组，否则 ctypes 传完指针数组就被回收，C++ 那边读到野内存 |
+| `repair` | 局部噪点修正。`parse_repair()` 解析并夹取前端参数；`apply_repair()` 在 `idx` 上改，套索先算「主色 D + 当前色 C」的 2 色迷你调色板用 `dist_batch` 判受害者（`dD ≤ dC`）再按强度阈值决定改哪些，画笔最后直接覆盖；`render_highlight()` 画洋红高亮；坐标一律归一化，预览和成品套用同一块区域 |
 | `adjustments` | `ADJUST_KEYS` 12 项 + `ADJUST_UNIPOLAR`（锐化/清晰/暗角只有正方向）；`parse_adjust()` 解析并夹取范围；调整在**成品尺寸**上做，保证预览和生成一致 |
 | `imageops` | `flatten_image()`（透明图铺背景）、`fit_image()`（stretch/contain/cover）、`recommend_ratios()` 推荐地图比例 |
 | `schematic` | `pick_block_names()` 同色多选时按 `random`/`cycle`/`first` 分配；`count_block_usage()` 统计；`build_mapart_schematic()` 用 `BlockState(id, **props)` 写方块状态；`schem_to_bytes()`、`safe_stem()` / `safe_litematic_name()` |
@@ -123,6 +129,39 @@
 > `//` 注释永远不出栈、一直吞到文件结尾，于是**没有任何一行被保护**，
 > 模板字符串里的缩进被改掉了。往返验证发现不了这个（补回空格当然能还原），
 > 是 token 级比对抓出来的。
+
+---
+
+## 三·五、局部噪点修正为什么这么做
+
+「受害者方块」的定义是这个功能的核心，改过一版：
+
+- ❌ **一开始写成「区域内 `idx != 主色` 的像素」** —— 太松。
+  在强度 4（阈值 1.0）下只有 705/928 被改回，剩下的 223 个「改不动」，
+  测试直接失败。原因是那 223 个像素用**当前颜色**其实比主色更准
+  （渐变该有的层次），把它们也算「受害者」本身就是错的。
+- ✅ **改成「`dD ≤ dC` 的像素」** —— 也就是「用主色表示不比用当前色差」。
+  于是强度 4 的「改回数量 == 受害者数量」天然成立，按 S 高亮的就是这一批，
+  而且修完之后区域里剩下的非主色像素全都是「当前色确实更准」的那些。
+
+这个定义还有个好处：**强度是可验证的递进关系**。测试里直接断言
+「强度 2 改的像素集合是强度 4 的子集」和「2 ≤ 3 ≤ 4 单调不减」，
+不靠感觉。
+
+坐标一律用**归一化坐标**（0~1，相对真实图像）。预览可能被 LANCZOS 缩小过，
+生成是全尺寸，用归一化坐标才能保证两处圈到/涂到的是同一块地方。
+测试里有一条专门验这个：同一份选区在 1 倍和 2 倍尺寸下，改回的比例要接近。
+
+前端的修正画布**不包 wrapper**，而是绝对定位盖在 `<img>` 上面。
+一开始包了一层 `.rp-wrap`（`display:inline-block; max-width:100%`），
+和 `img` 上的 `max-width:100%` 形成循环依赖，图片显示尺寸被压到 49×49；
+而且画布在图片完成布局**之前**测量，尺寸变成 1×1，之后所有归一化坐标全乱
+（第一个浏览器测试就是这么抓出来的）。现在改成：绝对定位 + `load` 事件 +
+`ResizeObserver` 兜底，尺寸退化时直接拒绝记录坐标。
+
+> 另一个只有实测才能发现的坑：预览接口一开始改完 `idx` 忘了按新 `idx`
+> 重新渲染 `rgb`，于是「修正生效了、但页面上看不出任何变化」。
+> 单元测试（直接调 `apply_repair`）完全发现不了，是浏览器测试读预览图像素抓出来的。
 
 ---
 

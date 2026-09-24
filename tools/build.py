@@ -9,8 +9,9 @@
     dist/maptool/换端口启动.bat        从 packaging/ 复制（GBK 编码）
 
 打包进去的资源（运行时由 maptool.config 定位到 _MEIPASS）：
-    web/     前端（index.html + css + js）
-    data/    block_icons.png、minecraft_blocks_mapcolor.json
+    web/                前端（index.html + css + js）
+    data/               block_icons.png、minecraft_blocks_mapcolor.json
+    native/             maptool_native.dll（C++ 抖动核心，可选）
     maptool.data.blockdata 作为普通模块打进包里（不需要当资源）
 
 用法（在工作区根目录执行）：
@@ -27,6 +28,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 WEB = os.path.join(SRC, "maptool", "web")
 DATA = os.path.join(SRC, "maptool", "data")
+NATIVE = os.path.join(SRC, "maptool", "native")
+NATIVE_DLL = os.path.join(NATIVE, "maptool_native.dll")
 PACKAGING = os.path.join(ROOT, "packaging")
 BUILD = os.path.join(ROOT, "build")
 DIST = os.path.join(ROOT, "dist", "maptool")
@@ -58,6 +61,14 @@ def preflight():
             print("  [×] " + x)
         raise SystemExit("打包前检查未通过")
     print("  [√] 资源文件齐全")
+
+    # C++ 抖动核心是可选的：没有 DLL 会自动退回纯 Python（结果一样，慢一些）
+    if os.path.isfile(NATIVE_DLL):
+        print("  [√] C++ 抖动核心：%.1f KB" % (os.path.getsize(NATIVE_DLL) / 1024.0))
+    else:
+        print("  ! 没有 %s —— 打包出来的程序会走纯 Python 抖动（结果一样，慢一些）"
+              % os.path.basename(NATIVE_DLL))
+        print("    要带上就装个 MinGW-w64 然后跑：python tools\\build_native.py")
 
     env = dict(os.environ, PYTHONPATH=SRC, PYTHONIOENCODING="utf-8")
     r = subprocess.run([sys.executable, "-c",
@@ -95,6 +106,9 @@ def build():
         "--add-data", os.path.join(DATA, "block_icons.png") + ";data",
         "--add-data", os.path.join(DATA, "minecraft_blocks_mapcolor.json") + ";data",
     ]
+    if os.path.isfile(NATIVE_DLL):
+        # maptool/native/__init__.py 的 _candidates() 会在 _MEIPASS/native/ 下找
+        cmd += ["--add-data", NATIVE_DLL + ";native"]
     for h in HIDDEN:
         cmd += ["--hidden-import", h]
     for c in COLLECT:

@@ -127,7 +127,102 @@
 
                             <button class="btn-small btn-block" id="adj-reset" style="margin-top:12px">
                                 恢复默认
-                            </button>                        </div>
+                            </button>
+
+                            <!-- ================= 局部噪点修正 ================= -->
+                            <div class="rp-sec" id="rp-sec">
+                                <div class="rp-head">
+                                    <span class="rp-title">局部噪点修正</span>
+                                    <span class="rp-sub">手动抖动修补</span>
+                                </div>
+                                <div class="hint mb-6">
+                                    抖动为了还原渐变会故意掺色。这里可以把某些区域
+                                    <b>改回本来想要的主色</b>，只影响圈定 / 涂抹到的地方。
+                                </div>
+
+                                <div class="rp-tabs">
+                                    <button class="rp-tab active" data-rpmode="lasso">套索（区域）</button>
+                                    <button class="rp-tab" data-rpmode="brush">画笔（像素）</button>
+                                </div>
+
+                                <!-- ---------- 套索 ---------- -->
+                                <div id="rp-pane-lasso">
+                                    <div class="hint mb-6">
+                                        在预览图上<b>拖拽圈出一片区域</b>，然后按
+                                        <kbd>S</kbd> 自动找出「受害者方块」并高亮。
+                                    </div>
+
+                                    <div class="rp-steps">
+                                        <button class="btn-small" id="rp-identify">
+                                            ① 识别受害者 <kbd>S</kbd>
+                                        </button>
+                                        <button class="btn-small" id="rp-apply">
+                                            ② 应用修正
+                                        </button>
+                                    </div>
+
+                                    <div class="adj-group">修补强度</div>
+                                    <div class="adj-row">
+                                        <div class="adj-top">
+                                            <span>强度</span>
+                                            <span class="adj-val" id="rp-level-v">2</span>
+                                        </div>
+                                        <input type="range" id="rp-level" min="2" max="4" step="1" value="2"
+                                               title="数字越大，改回主色的方块越多">
+                                    </div>
+                                    <div class="rp-desc" id="rp-level-desc"></div>
+
+                                    <div class="rp-stat" id="rp-stat">
+                                        还没有选区：在预览图上拖一圈
+                                    </div>
+                                    <div class="rp-btns">
+                                        <button class="btn-small" id="rp-clear-lasso">清除选区</button>
+                                    </div>
+                                </div>
+
+                                <!-- ---------- 画笔 ---------- -->
+                                <div id="rp-pane-brush" hidden>
+                                    <div class="hint mb-6">
+                                        在预览图上<b>按住涂抹</b>，把被污染的方块覆盖成笔刷颜色。
+                                        按住 <kbd>Alt</kbd> 点击可以<b>直接从预览取色</b>。
+                                    </div>
+
+                                    <div class="rp-row">
+                                        <span class="rp-lb">笔刷颜色</span>
+                                        <span class="rp-swatch" id="rp-color"></span>
+                                        <span class="rp-hex" id="rp-color-hex">—</span>
+                                    </div>
+
+                                    <div class="adj-row">
+                                        <div class="adj-top">
+                                            <span>笔刷半径（方块）</span>
+                                            <span class="adj-val" id="rp-size-v">6</span>
+                                        </div>
+                                        <input type="range" id="rp-size" min="1" max="40" step="1" value="6"
+                                               title="以成品方块数为单位；预览被缩小过也按同一块地方涂抹">
+                                    </div>
+
+                                    <div class="rp-row">
+                                        <button class="btn-small" id="rp-pick">
+                                            取色（Alt+点击）
+                                        </button>
+                                        <button class="btn-small" id="rp-clear-strokes">
+                                            清除涂抹
+                                        </button>
+                                    </div>
+
+                                    <div class="adj-group">从调色板选色（游戏内可用颜色）</div>
+                                    <div class="rp-pal" id="rp-pal"></div>
+                                </div>
+
+                                <div class="rp-foot">
+                                    <button class="btn-small btn-block" id="rp-reset">
+                                        全部清除修正
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- /局部噪点修正 -->
+                        </div>
 
                     </div>
                 </aside>
@@ -541,6 +636,7 @@
     <script src="/static/js/70-mapart.js"></script>
     <script src="/static/js/80-slice.js"></script>
     <script src="/static/js/85-lichen.js"></script>
+    <script src="/static/js/88-repair.js"></script>
     <script src="/static/js/90-init.js"></script>
     <script src="/static/js/92-focus.js"></script>
     <script src="/static/js/99-start.js"></script>

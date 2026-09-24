@@ -136,6 +136,7 @@
                 ...(PAL.loaded ? { blocks: palPayload() } : {}),
                 alloc: CFG.alloc || "random",
                 ...(adjActive() ? { adjust: ADJ } : {}),
+                ...rpSpread(),          // 局部噪点修正（见 88-repair.js）
             };
 
             try {
@@ -176,6 +177,13 @@
 
                 renderUsage(data.counts, data.total_blocks,
                     data.estimated ? "预览估算" : "预览");
+                // 挂上修正画布（预览图每次都被 innerHTML 换掉，需要重新挂）
+                rpNoteSize(data.width);
+                rpAttach();
+                rpShowInfo(data.repair);
+                if (RP.hasResult && !data.repair && rpActive()) {
+                    rpStat('<span class="rp-warn">修正没有生效</span>（可能是调色板变了）');
+                }
                 setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块，用色 ${used} 种`);
                 setBadge(`${data.blocks} 方块 · 预览`, "ok");
             } catch (e) {
@@ -239,6 +247,7 @@
                 ...(PAL.loaded ? { blocks: palPayload() } : {}),
                 alloc: CFG.alloc || "random",
                 ...(adjActive() ? { adjust: ADJ } : {}),
+                ...rpSpread(),          // 局部噪点修正（见 88-repair.js）
             };
 
             try {

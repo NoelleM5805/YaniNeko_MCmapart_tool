@@ -2,6 +2,7 @@
 import math
 import numpy as np
 
+from . import native
 from .colorspace import rgb_to_lab
 
 
@@ -166,57 +167,90 @@ def _rgb_to_lab_batch(rgb):
     return 116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)
 
 
-def match_batch(rgb_int, pal, algo_key, tables=None):
+def _dist_block(blk, pal, algo_key, tables):
     """
-    rgb_int: (P,3) 的整数数组（0..255），返回 (P,) 调色板下标。
-    整批用 numpy 算，比逐像素调用快一个数量级。
+    一批像素 (P,3) 到调色板每个颜色的距离矩阵 (P,n)。
+    match_batch 和 dist_batch 都走这里，保证「选哪个」和「差多少」用的是同一套公式。
+    """
+    if tables is not None:
+        TR, TG, TB = tables
+        return TR[blk[:, 0]] + TG[blk[:, 1]] + TB[blk[:, 2]]
+    if algo_key == "redmean":
+        # 与原式一致：整数相减 -> 再转 float64 参与乘除
+        rf = blk[:, 0].astype(np.float64)[:, None]
+        gf = blk[:, 1].astype(np.float64)[:, None]
+        bf = blk[:, 2].astype(np.float64)[:, None]
+        pi_r = pal.r.astype(np.float64)[None, :]
+        pi_g = pal.g.astype(np.float64)[None, :]
+        pi_b = pal.b.astype(np.float64)[None, :]
+        rmean = (rf + pi_r) * 0.5
+        dr = rf - pi_r
+        dg = gf - pi_g
+        db = bf - pi_b
+        return ((2 + rmean / 256) * dr * dr + 4 * dg * dg
+                + (2 + (255 - rmean) / 256) * db * db)
+
+    L, a, b = _rgb_to_lab_batch(blk)
+    if algo_key == "cie76":
+        dL = L[:, None] - pal.lab_l[None, :]
+        da = a[:, None] - pal.lab_a[None, :]
+        db = b[:, None] - pal.lab_b[None, :]
+        return dL * dL + da * da + db * db
+    if algo_key == "cie94":
+        C1 = np.hypot(a, b)[:, None]
+        dL = L[:, None] - pal.lab_l[None, :]
+        dC = C1 - pal.lab_c[None, :]
+        da = a[:, None] - pal.lab_a[None, :]
+        db = b[:, None] - pal.lab_b[None, :]
+        dH2 = np.maximum(0.0, da * da + db * db - dC * dC)
+        SC = 1 + 0.045 * C1
+        SH = 1 + 0.015 * C1
+        return dL * dL + (dC / SC) ** 2 + dH2 / (SH * SH)
+    return _ciede2000_dist(L[:, None], a[:, None], b[:, None], pal)
+
+
+def dist_batch(rgb_int, pal, algo_key, tables=None):
+    """
+    返回 (P, n) 的距离矩阵：每个像素到调色板每个颜色的距离。
+
+    「局部噪点修正」要比较「像素到主色的距离」和「像素到当前色的距离」，
+    需要的是距离本身而不是最小值，所以单独开这个接口。
+    刻意只走 numpy：调色板通常只有 2 个颜色（主色 + 当前色），
+    走 C++ 的往返开销反而更亏。
     """
     c = np.asarray(rgb_int, dtype=np.int32)
     P = c.shape[0]
-    out = np.empty(P, dtype=np.int32)
-    if P == 0:
-        return out
-
+    out = np.empty((P, pal.n), dtype=np.float64)
     for s in range(0, P, BATCH_CHUNK):
         e = min(s + BATCH_CHUNK, P)
-        blk = c[s:e]
-        if tables is not None:
-            TR, TG, TB = tables
-            d = TR[blk[:, 0]] + TG[blk[:, 1]] + TB[blk[:, 2]]
-        elif algo_key == "redmean":
-            # 与原式一致：整数相减 -> 再转 float64 参与乘除
-            rf = blk[:, 0].astype(np.float64)[:, None]
-            gf = blk[:, 1].astype(np.float64)[:, None]
-            bf = blk[:, 2].astype(np.float64)[:, None]
-            pi_r = pal.r.astype(np.float64)[None, :]
-            pi_g = pal.g.astype(np.float64)[None, :]
-            pi_b = pal.b.astype(np.float64)[None, :]
-            rmean = (rf + pi_r) * 0.5
-            dr = rf - pi_r
-            dg = gf - pi_g
-            db = bf - pi_b
-            d = ((2 + rmean / 256) * dr * dr + 4 * dg * dg
-                 + (2 + (255 - rmean) / 256) * db * db)
-        else:
-            L, a, b = _rgb_to_lab_batch(blk)
-            if algo_key == "cie76":
-                dL = L[:, None] - pal.lab_l[None, :]
-                da = a[:, None] - pal.lab_a[None, :]
-                db = b[:, None] - pal.lab_b[None, :]
-                d = dL * dL + da * da + db * db
-            elif algo_key == "cie94":
-                C1 = np.hypot(a, b)[:, None]
-                dL = L[:, None] - pal.lab_l[None, :]
-                dC = C1 - pal.lab_c[None, :]
-                da = a[:, None] - pal.lab_a[None, :]
-                db = b[:, None] - pal.lab_b[None, :]
-                dH2 = np.maximum(0.0, da * da + db * db - dC * dC)
-                SC = 1 + 0.045 * C1
-                SH = 1 + 0.015 * C1
-                d = dL * dL + (dC / SC) ** 2 + dH2 / (SH * SH)
-            else:                                    # ciede2000
-                d = _ciede2000_dist(L[:, None], a[:, None], b[:, None], pal)
-        out[s:e] = d.argmin(axis=1)
+        out[s:e] = _dist_block(c[s:e], pal, algo_key, tables)
+    return out
+
+
+def match_batch(rgb_int, pal, algo_key, tables=None):
+    """
+    rgb_int: (P,3) 的整数数组（0..255），返回 (P,) 调色板下标。
+
+    优先走 C++（native 里的匹配器每个颜色约 100 ns，numpy 批量约 1.5 µs/色）；
+    没编译 DLL、或这个算法还没通过全空间等价性验证时，退回下面的 numpy 实现。
+    两条路的结果逐位一致 —— 见 tests/native_match_equiv.py。
+    """
+    c = np.asarray(rgb_int, dtype=np.int32)
+    P = c.shape[0]
+    if P == 0:
+        return np.empty(0, dtype=np.int32)
+
+    if native.mode_for(algo_key) is not None:
+        try:
+            h = native.make_handle(algo_key, pal)
+            return h.match_list(c.astype(np.uint8)).astype(np.int32)
+        except Exception as e:                       # noqa: BLE001
+            print("[匹配] C++ 路径失败，退回 numpy：%s" % e)
+
+    out = np.empty(P, dtype=np.int32)
+    for s in range(0, P, BATCH_CHUNK):
+        e = min(s + BATCH_CHUNK, P)
+        out[s:e] = _dist_block(c[s:e], pal, algo_key, tables).argmin(axis=1)
     return out
 
 

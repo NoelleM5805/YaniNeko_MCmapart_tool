@@ -21,6 +21,7 @@ from .dithering import DITHER_LABELS, process_image
 from .imageops import fit_image, flatten_image, recommend_ratios
 from .keepalive import KEEPALIVE, KEEPALIVE_GRACE, KEEPALIVE_LOCK, KEEPALIVE_TICK, _keepalive_note
 from .palette import ALL_BLOCK_IDS, BLOCK_SOURCE_FILE, DEFAULT_BLOCK_IDS, ICON_META, PALETTE_GROUPS, PALETTE_META, make_palette
+from .repair import LEVEL_LABELS as REPAIR_LEVEL_LABELS, apply_repair, parse_repair, public_info, render_highlight
 from .schematic import build_mapart_schematic, count_block_usage, parse_alloc, pick_block_names, safe_litematic_name, safe_stem, schem_to_bytes
 from .lichen import do_glow_lichen
 from .slicing import do_slice
@@ -290,6 +291,22 @@ async def api_mapart_preview(payload: dict):
 
         st = max(0.0, min(1.0, strength / 100.0))
         idx, rgb = process_image(work, algo, dither, st, pal)
+
+        # 局部噪点修正：在抖动结果上做局部修补（详见 repair.py）
+        repair = parse_repair(payload)
+        rep_info = None
+        if repair:
+            idx, rep = apply_repair(idx, np.array(work, dtype=np.uint8), pal,
+                                    repair, algo)
+            # 修正改的是 idx，必须按新的 idx 重新渲染，否则页面上看不到任何变化
+            rgb = pal.rgb[idx].astype(np.uint8)
+            rep_info = public_info(rep)
+            if repair["identify"]:
+                # 只识别不修改：把受害者和选区画出来给用户看（覆盖在真实结果上）
+                rgb = render_highlight(rgb, rep)
+            elif not rep["applied"]:
+                rep_info["note"] = "选区里没有需要修正的方块"
+
         prev_img = Image.fromarray(rgb, mode="RGB")
 
         buf = io.BytesIO()
@@ -320,6 +337,7 @@ async def api_mapart_preview(payload: dict):
             "total_blocks": real_w * real_h,
             "estimated": abs(ratio - 1.0) > 1e-9,
             "adjust": adj,
+            "repair": rep_info,
         }
     except Exception as e:
         traceback.print_exc()
@@ -349,6 +367,7 @@ async def api_mapart_generate(payload: dict):
     adj = parse_adjust(payload)
     alloc = parse_alloc(payload)
     out_name = safe_litematic_name(payload.get("filename"))
+    repair = parse_repair(payload)
 
     pal, used = make_palette(selected)
     if pal.n == 0:
@@ -395,6 +414,21 @@ async def api_mapart_generate(payload: dict):
             add_log(task, "处理像素…")
             st = max(0.0, min(1.0, strength / 100.0))
             idx, rgb = process_image(work, algo, dither, st, pal)
+
+            # 局部噪点修正（和预览走同一个函数，坐标按真实尺寸换算，两边一致）
+            if repair:
+                idx, rep = apply_repair(idx, np.array(work, dtype=np.uint8), pal,
+                                        repair, algo)
+                rgb = pal.rgb[idx].astype(np.uint8)
+                if rep["lassos"]:
+                    for li in rep["lassos"]:
+                        add_log(task, "局部修正：选区 %d 像素，主色 %s，"
+                                      "受害者 %d 个，改回 %d 个（强度 %d）"
+                                % (li["pixels"], li["dominant"], li["victims"],
+                                   li["repaired"], li["level"]))
+                if rep["brush_pixels"]:
+                    add_log(task, "画笔覆盖：%d 个像素（%d 笔）"
+                            % (rep["brush_pixels"], len(repair["strokes"])))
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
             schem, placed, counts = build_mapart_schematic(

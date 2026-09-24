@@ -392,6 +392,18 @@
                 renderPalette();
                 applyDisplayOpts();
                 palStat();
+                if (typeof rpBuildPalette === "function") {
+                    // 局部噪点修正的画笔颜色：默认取第一个「已勾选方块」所在颜色组的色号
+                    if (!RP.brushHex) {
+                        let hex0 = null;
+                        for (const g of PAL.groups) {
+                            if (g.blocks.some(b => PAL.selected.has(b.id))) { hex0 = g.hex; break; }
+                        }
+                        hex0 = hex0 || (PAL.groups[0] && PAL.groups[0].hex) || null;
+                        if (hex0) rpSetBrushColor(hex0);
+                    }
+                    rpBuildPalette();
+                }
                 schedulePreview(0);
             } catch (e) {
                 $("pal-count").innerHTML = '<span class="warn">方块表加载失败</span>';

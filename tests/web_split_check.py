@@ -62,7 +62,18 @@ EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 OLD_PORT, NEW_PORT = 8811, 8812
 OLD_PROXY, NEW_PROXY = 8821, 8822
 
+# 拆分之后又**有意**加了功能（局部噪点修正）的文件。
+# 这些文件要求「原有 token 流是完整子序列」—— 只许加，不许删改原有代码；
+# 其余文件仍然要求 token 完全一致。
+MODIFIED_JS = {"40-palette.js", "70-mapart.js"}
+
 PASS, FAIL = [], []
+
+
+def is_subsequence(small, big):
+    """small 是不是 big 的子序列（顺序保持一致，中间可以插东西）。"""
+    it = iter(big)
+    return all(any(x == y for y in it) for x in small)
 
 
 def _load_splitter():
@@ -182,16 +193,28 @@ def static_checks(splitter):
             continue
         body = "\n".join(io.open(path, encoding="utf-8").read().split("\n")[3:])
         ta, tb = js_tokens(orig), js_tokens(body)
-        check("%s token 一致（%d 个）" % (name, len(ta)), ta == tb, first_diff(ta, tb))
+        if name in MODIFIED_JS:
+            # 拆分之后又**有意**加了功能（局部噪点修正）。这些文件必须是
+            # 「原文 token 流作为子序列完整保留」—— 只许加，不许删改原有代码。
+            ok = is_subsequence(ta, tb)
+            check("%s 保留了原有全部代码（新增 %d 个 token）"
+                  % (name, len(tb) - len(ta)), ok,
+                  "" if ok else "原有 token 流不是新文件的子序列")
+        else:
+            check("%s token 一致（%d 个）" % (name, len(ta)), ta == tb, first_diff(ta, tb))
 
     css_orig = "\n".join(lines[splitter.STYLE[0] - 1:splitter.STYLE[1]])
     css_new = io.open(os.path.join(WEB, "css", "style.css"), encoding="utf-8").read()
     ca, cb = css_tokens(css_orig), css_tokens(css_new.split("*/", 1)[1])
-    check("style.css token 一致（%d 个）" % len(ca), ca == cb, first_diff(ca, cb))
+    check("style.css 保留了原有全部样式（%d -> %d 个 token）" % (len(ca), len(cb)),
+          is_subsequence(ca, cb), first_diff(ca, cb))
 
     body_orig = "\n".join(lines[splitter.BODY[0] - 1:splitter.BODY[1]])
     html = io.open(os.path.join(WEB, "index.html"), encoding="utf-8").read()
-    check("body 结构逐字一致", body_orig in html)
+    bo = [t for t in re.split(r"(\s+)", body_orig) if t.strip()]
+    bn = [t for t in re.split(r"(\s+)", html) if t.strip()]
+    check("body 结构保留了原有全部标签（%d -> %d 个片段）" % (len(bo), len(bn)),
+          is_subsequence(bo, bn), "原有标签序列不是新页面的子序列")
 
 
 # =============================================================== 提升
@@ -323,13 +346,67 @@ def dump_dom(url, budget=6000, timeout=150):
         shutil.rmtree(prof, ignore_errors=True)
 
 
-def normalize_dom(dom):
-    # 新页面里有几行说明性注释（旧的是单文件，没有），比对时忽略 HTML 注释
+def strip_div_by_id(dom, elem_id):
+    """
+    删掉某个 <div id="..."> 连同它的内容（按 <div> 嵌套深度配对，不用正则硬扛）。
+
+    之所以要删 #pal-list：调色板后来有意新增了砂轮和冰，方块列表的内容和顺序
+    必然和旧版不同 —— 那部分由 tests/regression_check.py（带显式白名单）
+    和 tools/check_icons.py（逐格比对贴图）负责验证。
+    这个测试只管「前端拆分是否忠实」，所以把调色板列表摘掉再比 DOM。
+    """
+    marker = 'id="%s"' % elem_id
+    i = dom.find(marker)
+    if i < 0:
+        return dom
+    # 回退到该属性所在标签的 '<'
+    start = dom.rfind("<", 0, i)
+    if start < 0:
+        return dom
+    j = dom.find(">", i)
+    if j < 0:
+        return dom
+    depth = 1
+    k = j + 1
+    while k < len(dom) and depth > 0:
+        nxt_open = dom.find("<div", k)
+        nxt_close = dom.find("</div", k)
+        if nxt_close < 0:
+            break
+        if 0 <= nxt_open < nxt_close:
+            depth += 1
+            k = nxt_open + 4
+        else:
+            depth -= 1
+            k = nxt_close + 5
+    end = dom.find(">", k)
+    return dom[:start] + dom[end + 1:]
+
+
+def normalize_dom(dom, strip_palette_list=True):
+    if strip_palette_list:
+        dom = strip_div_by_id(dom, "pal-list")
+    # 「局部噪点修正」是拆分之后有意新增的功能，旧版当然没有；
+    # 比对旧/新版一致性的目的在别处，这里把新增的部分摘掉再比。
+    # 注意顺序：必须在删注释**之前**摘，否则两个标记注释先被删掉就找不到了。
+    dom = re.sub(r"<!--\s*=+\s*局部噪点修正\s*=+\s*-->.*?<!--\s*/局部噪点修正\s*-->",
+                 "", dom, flags=re.S)
+    dom = re.sub(r"<canvas\b[^>]*>.*?</canvas>", "", dom, flags=re.S | re.I)
+    # 说明性注释（旧版单文件没有），比对时忽略
     dom = re.sub(r"<!--.*?-->", "", dom, flags=re.S)
     dom = re.sub(r"<style\b[^>]*>.*?</style>", "", dom, flags=re.S | re.I)
     dom = re.sub(r"<script\b[^>]*>.*?</script>", "", dom, flags=re.S | re.I)
     dom = re.sub(r"<link\b[^>]*>", "", dom, flags=re.I)
     dom = re.sub(r"/api/icons\.png\?v=[\d\-]+", "/api/icons.png?v=X", dom)
+    # 图标贴图集的行数由方块数决定，新增 2 个方块后 18 -> 19 行，是预期的变化。
+    # 具体数值单独比（见下面 dynamic_check 里的断言）。
+    dom = re.sub(r"--icon-rows:\s*\d+", "--icon-rows: X", dom)
+    # 方块总数随调色板变化（288 -> 290，新增砂轮 + 冰），单独断言
+    dom = re.sub(r"/\d+ 个方块", "/N 个方块", dom)
+    # 图标在贴图集里的格子坐标：新增 2 个方块后整表重排，坐标必然变。
+    # 坐标的正确性由 tools/check_icons.py 逐格比对像素来保证。
+    dom = re.sub(r"calc\(var\(--icon-px\) \* -?\d+\) calc\(var\(--icon-px\) \* -?\d+\)",
+                 "ICONPOS", dom)
     return re.sub(r"\s+", " ", dom).strip()
 
 
@@ -343,9 +420,27 @@ def dynamic_check():
         old_proc, new_proc = start_servers()
         proxies.append(start_proxy(OLD_PORT, OLD_PROXY))
         proxies.append(start_proxy(NEW_PORT, NEW_PROXY))
-        a = normalize_dom(dump_dom("http://127.0.0.1:%d/" % OLD_PROXY))
-        b = normalize_dom(dump_dom("http://127.0.0.1:%d/" % NEW_PROXY))
+        old_raw = dump_dom("http://127.0.0.1:%d/" % OLD_PROXY)
+        new_raw = dump_dom("http://127.0.0.1:%d/" % NEW_PROXY)
+        a = normalize_dom(old_raw)
+        b = normalize_dom(new_raw)
         check("渲染后的 DOM 完全一致（%d 字符）" % len(a), a == b)
+
+        # 图标贴图集行数在 normalize 里被抹成 X 了，用原始 DOM 单独比一次
+        ra = re.search(r"--icon-rows:\s*(\d+)", old_raw)
+        rb = re.search(r"--icon-rows:\s*(\d+)", new_raw)
+        if ra and rb:
+            check("图标贴图集行数按预期增加（%s -> %s）"
+                  % (ra.group(1), rb.group(1)),
+                  int(rb.group(1)) == int(ra.group(1)) + 1)
+
+        # 方块总数：288 -> 290（新增砂轮 + 冰）
+        na = re.search(r"已选 \d+/(\d+) 个方块", old_raw)
+        nb = re.search(r"已选 \d+/(\d+) 个方块", new_raw)
+        if na and nb:
+            check("方块总数按预期增加（%s -> %s）" % (na.group(1), nb.group(1)),
+                  int(nb.group(1)) == int(na.group(1)) + 2)
+
         if a != b:
             n = min(len(a), len(b))
             k = next((i for i in range(n) if a[i] != b[i]), n)
@@ -353,11 +448,25 @@ def dynamic_check():
             print("        旧:", repr(a[max(0, k - 120):k + 200]))
             print("        新:", repr(b[max(0, k - 120):k + 200]))
         else:
-            for probe, least in (("pgroup", 59), ("face-item", 6),
-                                 ("pal-alloc", 1), ("pblock", 288),
-                                 ("pal-icon", 288), ("zoom-hint", 2)):
+            # 这些都在 #pal-list 里（对比时被摘掉了），所以在**原始**新页面 DOM 上查。
+            # 方块数 288 -> 290：有意新增砂轮 + 冰。
+            for probe, least in (("pgroup", 59), ("pblock", 290),
+                                 ("pal-icon", 290)):
+                have = new_raw.count(probe)
+                check("新页面含 %s × %d" % (probe, least), have >= least,
+                      "实际 %d" % have)
+            # 不属于调色板列表的，仍在新旧共有的 DOM 上查
+            for probe, least in (("face-item", 6), ("pal-alloc", 1),
+                                 ("zoom-hint", 2)):
                 have = a.count(probe)
                 check("渲染结果含 %s × %d" % (probe, least), have >= least,
+                      "实际 %d" % have)
+            # 有意新增的修正面板（画布要上传图片后才有，见 tests/repair_web_check.py）
+            for probe, least in (('id="rp-sec"', 1), ('class="rp-tab', 2),
+                                 ('id="rp-level"', 1), ('id="rp-pal"', 1),
+                                 ('class="rp-chip', 59)):
+                have = new_raw.count(probe)
+                check("新页面含 %s × %d" % (probe, least), have >= least,
                       "实际 %d" % have)
     finally:
         for p in (old_proc, new_proc):

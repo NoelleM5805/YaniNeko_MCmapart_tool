@@ -187,7 +187,7 @@ BATTERY_PREVIEW = [
          fit_mode="stretch"),
     dict(algo="euclidean", dither="none", strength=100, size_mode="max", max_size=120,
          fit_mode="contain"),
-    dict(algo="redmean", dither="floyd_steinberg", strength=80, size_mode="grid",
+    dict(algo="redmean", dither="floyd", strength=80, size_mode="grid",
          grid_x=2, grid_y=2, fit_mode="cover"),
     dict(algo="cie94", dither="bayer8", strength=60, size_mode="grid", grid_x=2, grid_y=2,
          fit_mode="stretch"),
@@ -199,8 +199,14 @@ BATTERY_PREVIEW = [
 ]
 
 
-def battery(base, img_path):
-    """在某个服务上跑一整套请求，返回可比对的规范化结果。"""
+def battery(base, img_path, sel_some):
+    """
+    在某个服务上跑一整套请求，返回可比对的规范化结果。
+
+    sel_some 是**调用方给定**的方块选择（从旧版调色板里挑出来的），两边用同一份 ——
+    调色板后来新增了方块（砂轮 / 冰），如果各自拿自己的调色板去挑，选项就不一样了，
+    比出来的差异是调色板差异而不是代码差异。
+    """
     out = {}
 
     st, js = jreq(base + "/api/palette")
@@ -223,23 +229,32 @@ def battery(base, img_path):
                      "w": up.get("width"), "h": up.get("height")}
     sid = up.get("sid")
 
-    # 默认调色板 + 只选一部分方块，两种都要一致
-    sel_all = None
-    sel_some = [g["blocks"][0]["id"] for g in out["palette"]["groups"][::3]]
-
+    # 显式调色板（两边同一份）+ 不传 blocks（各用各自的服务端默认，不参与比对）
+    # 新版预览响应多了一个 repair 字段（局部噪点修正）；这一轮没带 repair 参数，
+    # 它必然是 None，摘出来单独断言，不然会跟旧版比出「新版多出字段」。
+    repair_seen = []
     for i, p in enumerate(BATTERY_PREVIEW):
-        for tag, sel in (("def", sel_all), ("sel", sel_some)):
+        for tag, sel in (("sel", sel_some),):
             payload = dict(p)
             payload["sid"] = sid
-            if sel is not None:
-                payload["blocks"] = sel
+            payload["blocks"] = sel
             st, js = jreq(base + "/api/mapart/preview", payload)
+            if isinstance(js, dict):
+                # 记录 repair 字段的情况：成功的响应必须是 repair=None，
+                # 失败/提前返回的响应（比如参数不合法）不带这个字段也正常。
+                repair_seen.append({
+                    "case": i,
+                    "ok": bool(js.get("ok")),
+                    "has_key": "repair" in js,
+                    "val": js.pop("repair", None),
+                })
             out["preview_%d_%s" % (i, tag)] = {"status": st, "body": js}
+    out["_repair_field"] = repair_seen
 
     # 生成 + 下载
     st, js = jreq(base + "/api/mapart/generate",
                   dict(BATTERY_PREVIEW[0], sid=sid, filename="测试图 v2!.png",
-                       alloc="cycle"))
+                       alloc="cycle", blocks=sel_some))
     if js.get("ok"):
         stt = wait_task(base, js["task_id"])
         out["generate"] = {"status": st, "result": stt.get("result"),
@@ -340,22 +355,140 @@ def compare(a, b, path=""):
     return diffs
 
 
+# ---------------------------------------------------------------------------
+# 调色板相对旧版**有意**新增的方块。
+# 除此之外调色板必须和旧版完全一致，否则算回归。
+# 注意：`_build_palette_groups` 组内按中文名排序、默认项 = 第一个，
+# 所以新增方块会让所在颜色组的默认项跟着变 —— 这是已知且接受的副作用，
+# 下面单独把这两处列出来，其它位置仍然严格比对。
+# ---------------------------------------------------------------------------
+ADDED_BLOCKS = {
+    "#909090": [("minecraft:grindstone", "砂轮")],
+    "#8A8ADC": [("minecraft:ice", "冰")],
+}
+# 新增方块后默认项会变的颜色组
+DEFAULT_CHANGED = {
+    "#909090": ("minecraft:lodestone", "minecraft:grindstone"),
+    "#8A8ADC": ("minecraft:packed_ice", "minecraft:ice"),
+}
+
+
+def _strip_added(pal):
+    """
+    把有意新增的方块从调色板里摘掉，剩下的必须和旧版一致。
+
+    同时丢掉 cx/cy（图标在贴图集里的格子坐标）：新增 2 个方块后，贴图集
+    从 256×288 变成 256×304，每个方块所处的格子必然整体重排，坐标没法比。
+    坐标的正确性由 tools/check_icons.py 单独保证 —— 它会逐格比对像素，
+    确认每个格子正好就是该方块应有的贴图（当前 289/289 全部一致）。
+    """
+    groups = []
+    for g in pal.get("groups") or []:
+        g = dict(g)
+        drop = {bid for bid, _lbl in ADDED_BLOCKS.get(g["hex"], [])}
+        blocks = []
+        for b in g["blocks"]:
+            if b["id"] in drop:
+                continue
+            b = dict(b)
+            b.pop("cx", None)
+            b.pop("cy", None)
+            blocks.append(b)
+        g["blocks"] = blocks
+        groups.append(g)
+    out = dict(pal)
+    out["groups"] = groups
+    out.pop("total_blocks", None)
+    out.pop("defaults", None)
+    out.pop("icon", None)       # 贴图集元信息由下面的 compare_palette 单独比
+    return out
+
+
+def compare_palette(a, b):
+    """旧版 vs 新版调色板：允许上面登记的差异，其余严格比。"""
+    diffs = compare(_strip_added(a), _strip_added(b), "palette")
+    diffs += compare(a.get("total_groups"), b.get("total_groups"), "palette.total_groups")
+
+    n_new = sum(len(v) for v in ADDED_BLOCKS.values())
+    if b.get("total_blocks") != (a.get("total_blocks") or 0) + n_new:
+        diffs.append("palette.total_blocks 应为 %d，实际 %s"
+                     % ((a.get("total_blocks") or 0) + n_new, b.get("total_blocks")))
+
+    # 图标贴图集：格子数变了（新增方块），只比格子尺寸和列数
+    ia, ib = a.get("icon") or {}, b.get("icon") or {}
+    for k in ("size", "cols"):
+        if ia.get(k) != ib.get(k):
+            diffs.append("palette.icon.%s %s != %s" % (k, ia.get(k), ib.get(k)))
+    if ib.get("rows") != (ia.get("rows") or 0) + 1:
+        diffs.append("palette.icon.rows 应为 %s，实际 %s"
+                     % ((ia.get("rows") or 0) + 1, ib.get("rows")))
+
+    # 默认项：只允许登记过的那两组变化
+    da = {g["hex"]: g["blocks"][0]["id"] for g in a.get("groups") or [] if g["blocks"]}
+    db = {g["hex"]: g["blocks"][0]["id"] for g in b.get("groups") or [] if g["blocks"]}
+    for hexv in sorted(set(da) | set(db)):
+        if da.get(hexv) == db.get(hexv):
+            continue
+        want = DEFAULT_CHANGED.get(hexv)
+        if want and want == (da.get(hexv), db.get(hexv)):
+            continue
+        diffs.append("palette.defaults[%s] %s != %s" % (hexv, da.get(hexv), db.get(hexv)))
+    return diffs
+
+
+def compare_icons(a, b):
+    """图标贴图集内容会随新增方块而变，这里只要求都取得到、且新版更大。"""
+    if a.get("status") != 200 or b.get("status") != 200:
+        return ["icons 状态 %s / %s" % (a.get("status"), b.get("status"))]
+    if b.get("len", 0) <= a.get("len", 0):
+        return ["icons 字节数没有随新增方块变大：%s -> %s" % (a.get("len"), b.get("len"))]
+    return []
+
+
 def main():
     img = make_test_image(os.path.join(TMP, "test.png"))
     old_proc = new_proc = None
     try:
         print("启动两个服务…")
         old_proc, new_proc = start_servers()
+        old_base = "http://127.0.0.1:%d" % OLD_PORT
+        new_base = "http://127.0.0.1:%d" % NEW_PORT
+
+        # 两边共用同一份方块选择（取自旧版调色板；这些 ID 新版也都还在）
+        _st, old_pal = jreq(old_base + "/api/palette")
+        sel = [g["blocks"][0]["id"] for g in (old_pal.get("groups") or [])[::3]]
+        print("共用方块选择：%d 个" % len(sel))
+
         print("跑旧版测试集…")
-        a = battery("http://127.0.0.1:%d" % OLD_PORT, img)
+        a = battery(old_base, img, sel)
         print("跑新版测试集…")
-        b = battery("http://127.0.0.1:%d" % NEW_PORT, img)
+        b = battery(new_base, img, sel)
 
         print("\n比对结果：")
-        keys = sorted(set(a) | set(b))
-        for k in keys:
-            d = compare(a.get(k), b.get(k), k)
+        for k in sorted(set(a) | set(b)):
+            if k.startswith("_"):
+                continue
+            if k == "palette":
+                d = compare_palette(a.get(k), b.get(k))
+            elif k == "icons":
+                d = compare_icons(a.get(k), b.get(k))
+            else:
+                d = compare(a.get(k), b.get(k), k)
             check(k, not d, "; ".join(d[:6]))
+
+        # 没带 repair 参数时：旧版一定没有 repair 字段；新版凡是成功的响应，
+        # repair 必须是 None（不能凭空产生修正）。失败的响应不带这个字段是正常的。
+        old_rows = a.get("_repair_field") or []
+        new_rows = b.get("_repair_field") or []
+        old_clean = all(not r["has_key"] for r in old_rows)
+        new_clean = all((r["ok"] and r["has_key"] and r["val"] is None)
+                        or (not r["ok"] and not r["has_key"])
+                        for r in new_rows)
+        n_ok = sum(1 for r in new_rows if r["ok"])
+        check("不带 repair 参数时 repair 恒为 None（%d/%d 个成功响应）"
+              % (n_ok, len(new_rows)),
+              old_clean and new_clean,
+              "旧 %s / 新 %s" % (old_rows, new_rows))
     finally:
         for p in (old_proc, new_proc):
             if p:

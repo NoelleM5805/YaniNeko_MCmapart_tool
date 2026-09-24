@@ -108,6 +108,14 @@ BLOCK_PROPS = {
                       "powered=false,waterlogged=false"),
     # 轻质测重压力板：无实体踩踏，power=0
     "light_weighted_pressure_plate": "power=0",
+    # 砂轮：视角向下放置（对着地面放，即 face=floor），朝北。
+    #   三种 face 的俯视效果实测（按朝上面面积加权）：
+    #     face=floor   #837C76（磨盘 grindstone_round #8E8E8E 占 96/120 面积）← 最接近 #909090
+    #     face=wall    #756D65（深色橡木腿和转轴露得多）
+    #     face=ceiling #7A736C
+    #   face=floor 是唯一一个俯视主体就是磨盘的朝向，facing 只绕 Y 转，
+    #   取 north 即模型原始朝向。
+    "grindstone": "face=floor,facing=north",
 }
 
 
@@ -190,10 +198,18 @@ def download_texture(base, cache_dir):
 
 
 def resolve_texture(block_id, local_names, cache_dir, offline):
+    """
+    找一个能用的贴图文件名。
+
+    `_build_cache/textures` 是上次联网下载的缓存，它本身就属于「本地」，
+    所以 --offline 也要用它 —— 否则整张图集都会退化成纯色块。
+    """
     base = tex_base(block_id)
     for suf in TEX_SUFFIXES:
         fn = base + suf + ".png"
         if local_names is not None and fn[:-4] in local_names:
+            return fn
+        if os.path.isfile(os.path.join(cache_dir, fn)):
             return fn
     if offline:
         return None
