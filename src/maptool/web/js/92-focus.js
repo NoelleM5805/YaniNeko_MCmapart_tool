@@ -26,6 +26,8 @@
             if (!img) return;
             img.style.transform =
                 `translate(${FOCUS.tx}px, ${FOCUS.ty}px) scale(${FOCUS.scale})`;
+            // 修正的选区覆盖层要跟着图片一起变换，否则一缩放就错位
+            if (typeof rpApplyTransform === "function") rpApplyTransform();
         }
 
         function focusResetTransform() {
@@ -82,10 +84,21 @@
                 focusZoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
             }, { passive: false });
 
+            // 右键拖动预览图（左键留给套索 / 画笔）。
+            // 覆盖画布正好盖在图片上，所以左键落在画布上时交给工具，
+            // 只有右键（或没有覆盖画布时的左键）才用来平移。
+            box.addEventListener("contextmenu", (e) => {
+                if (focusOn()) e.preventDefault();
+            });
+
             box.addEventListener("mousedown", (e) => {
                 if (!focusOn()) return;
                 const img = focusImg();
-                if (!img || !e.target.closest("img")) return;
+                if (!img) return;
+                const onOverlay = typeof RP !== "undefined" && RP && RP.open
+                    && RP.canvas && e.target === RP.canvas;
+                const pan = (e.button === 2) || (e.button === 0 && !onOverlay);
+                if (!pan) return;
                 e.preventDefault();
                 FOCUS.dragging = true;
                 FOCUS.sx = e.clientX; FOCUS.sy = e.clientY;
@@ -170,6 +183,10 @@
             } else if (focusOn()) {
                 focusExit();
             }
+            // 「局部噪点修正」只在隐藏原图（专注模式）下开放：
+            // 关掉时左边栏不显示这一块，预览图上的覆盖画布也摘掉，
+            // 点击预览图恢复成原来的「点击放大」。
+            if (typeof rpSetOpen === "function") rpSetOpen(!!CFG.soloPreview);
         }
 
         $("set-solo-preview").addEventListener("click", () => {

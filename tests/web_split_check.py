@@ -62,12 +62,31 @@ EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 OLD_PORT, NEW_PORT = 8811, 8812
 OLD_PROXY, NEW_PROXY = 8821, 8822
 
-# 拆分之后又**有意**加了功能（局部噪点修正）的文件。
-# 这些文件要求「原有 token 流是完整子序列」—— 只许加，不许删改原有代码；
-# 其余文件仍然要求 token 完全一致。
-MODIFIED_JS = {"40-palette.js", "70-mapart.js"}
+# 拆分之后又**有意**加了功能的文件（只许加，不许删改原有代码）：
+#   40-palette / 70-mapart : 局部噪点修正接入
+#   30-adjust / 90-init    : 全局撤回接入（在 change 事件里记一条状态）
+#   99-start               : 建左边栏的「配色调参」镜像
+MODIFIED_JS = {"40-palette.js", "70-mapart.js", "30-adjust.js",
+               "90-init.js", "99-start.js"}
+
+# 原有逻辑被**有意改写**的文件：不能再用「子序列」检查，
+# 但要求原有的顶层函数/常量一个都不能少（防手滑删掉东西）。
+#   92-focus : 平移改成右键，左键留给套索/画笔
+CHANGED_JS = {"92-focus.js"}
 
 PASS, FAIL = [], []
+
+
+DECL_NAME = re.compile(
+    r"^\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)"
+    r"|^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)", re.M)
+
+
+def decl_names(src):
+    out = set()
+    for m in DECL_NAME.finditer(src):
+        out.add(m.group(1) or m.group(2))
+    return out
 
 
 def is_subsequence(small, big):
@@ -193,9 +212,14 @@ def static_checks(splitter):
             continue
         body = "\n".join(io.open(path, encoding="utf-8").read().split("\n")[3:])
         ta, tb = js_tokens(orig), js_tokens(body)
-        if name in MODIFIED_JS:
-            # 拆分之后又**有意**加了功能（局部噪点修正）。这些文件必须是
-            # 「原文 token 流作为子序列完整保留」—— 只许加，不许删改原有代码。
+        if name in CHANGED_JS:
+            # 原有逻辑被有意改写：退一步，只要求原有的顶层声明一个都没少
+            lost = sorted(decl_names(orig) - decl_names(body))
+            check("%s 原有顶层声明一个没少（%d 个）"
+                  % (name, len(decl_names(orig))), not lost,
+                  "少了：%s" % ", ".join(lost))
+        elif name in MODIFIED_JS:
+            # 只许加，不许删改原有代码
             ok = is_subsequence(ta, tb)
             check("%s 保留了原有全部代码（新增 %d 个 token）"
                   % (name, len(tb) - len(ta)), ok,
@@ -386,10 +410,12 @@ def strip_div_by_id(dom, elem_id):
 def normalize_dom(dom, strip_palette_list=True):
     if strip_palette_list:
         dom = strip_div_by_id(dom, "pal-list")
-    # 「局部噪点修正」是拆分之后有意新增的功能，旧版当然没有；
+    # 「局部噪点修正」「配色调参」都是拆分之后有意新增的功能，旧版当然没有；
     # 比对旧/新版一致性的目的在别处，这里把新增的部分摘掉再比。
     # 注意顺序：必须在删注释**之前**摘，否则两个标记注释先被删掉就找不到了。
     dom = re.sub(r"<!--\s*=+\s*局部噪点修正\s*=+\s*-->.*?<!--\s*/局部噪点修正\s*-->",
+                 "", dom, flags=re.S)
+    dom = re.sub(r"<!--\s*=+\s*配色调参.*?-->.*?<!--\s*/配色调参\s*-->",
                  "", dom, flags=re.S)
     dom = re.sub(r"<canvas\b[^>]*>.*?</canvas>", "", dom, flags=re.S | re.I)
     # 说明性注释（旧版单文件没有），比对时忽略

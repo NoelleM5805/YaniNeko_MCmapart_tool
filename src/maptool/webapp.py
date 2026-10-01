@@ -9,10 +9,12 @@ import io
 import json
 import numpy as np
 import os
+import sys
 import threading
 import time
 import traceback
 
+from . import __version__, native
 from .adjustments import ADJUST_KEYS, ADJUST_LABELS, apply_image_adjust, parse_adjust
 from .config import (DEFAULT_SEED, FACE_KEYS, PREVIEW_MAX_SIDE, TASKS, TASK_LOCK,
                      WEB_DIR, get_base_dir, get_resource_path, web_index_path)
@@ -21,7 +23,7 @@ from .dithering import DITHER_LABELS, process_image
 from .imageops import fit_image, flatten_image, recommend_ratios
 from .keepalive import KEEPALIVE, KEEPALIVE_GRACE, KEEPALIVE_LOCK, KEEPALIVE_TICK, _keepalive_note
 from .palette import ALL_BLOCK_IDS, BLOCK_SOURCE_FILE, DEFAULT_BLOCK_IDS, ICON_META, PALETTE_GROUPS, PALETTE_META, make_palette
-from .repair import LEVEL_LABELS as REPAIR_LEVEL_LABELS, apply_repair, parse_repair, public_info, render_highlight
+from .repair import apply_repair, parse_repair, public_info
 from .schematic import build_mapart_schematic, count_block_usage, parse_alloc, pick_block_names, safe_litematic_name, safe_stem, schem_to_bytes
 from .lichen import do_glow_lichen
 from .slicing import do_slice
@@ -119,6 +121,14 @@ def api_palette():
         "defaults": DEFAULT_BLOCK_IDS,
         "total_groups": len(PALETTE_GROUPS),
         "total_blocks": len(ALL_BLOCK_IDS),
+        # 版本 / 运行环境 / C++ 核心状态。打包出问题时看这几个字段最快。
+        "version": __version__,
+        "frozen": bool(getattr(sys, "frozen", False)),
+        "native": {
+            "available": native.available(),
+            "version": native.version() if native.available() else None,
+            "error": None if native.available() else native.load_error(),
+        },
     }
 
 
@@ -292,7 +302,7 @@ async def api_mapart_preview(payload: dict):
         st = max(0.0, min(1.0, strength / 100.0))
         idx, rgb = process_image(work, algo, dither, st, pal)
 
-        # 局部噪点修正：在抖动结果上做局部修补（详见 repair.py）
+        # 局部噪点修正：把前端记录的操作序列重放到抖动结果上（详见 repair.py）
         repair = parse_repair(payload)
         rep_info = None
         if repair:
@@ -301,11 +311,8 @@ async def api_mapart_preview(payload: dict):
             # 修正改的是 idx，必须按新的 idx 重新渲染，否则页面上看不到任何变化
             rgb = pal.rgb[idx].astype(np.uint8)
             rep_info = public_info(rep)
-            if repair["identify"]:
-                # 只识别不修改：把受害者和选区画出来给用户看（覆盖在真实结果上）
-                rgb = render_highlight(rgb, rep)
-            elif not rep["applied"]:
-                rep_info["note"] = "选区里没有需要修正的方块"
+            if not rep["applied"] and not rep["warnings"]:
+                rep_info["note"] = "这一步没有改动任何方块"
 
         prev_img = Image.fromarray(rgb, mode="RGB")
 
@@ -415,20 +422,30 @@ async def api_mapart_generate(payload: dict):
             st = max(0.0, min(1.0, strength / 100.0))
             idx, rgb = process_image(work, algo, dither, st, pal)
 
-            # 局部噪点修正（和预览走同一个函数，坐标按真实尺寸换算，两边一致）
+            # 局部噪点修正（和预览走同一个函数，操作序列一样，结果一致）
             if repair:
                 idx, rep = apply_repair(idx, np.array(work, dtype=np.uint8), pal,
                                         repair, algo)
                 rgb = pal.rgb[idx].astype(np.uint8)
-                if rep["lassos"]:
-                    for li in rep["lassos"]:
-                        add_log(task, "局部修正：选区 %d 像素，主色 %s，"
-                                      "受害者 %d 个，改回 %d 个（强度 %d）"
-                                % (li["pixels"], li["dominant"], li["victims"],
-                                   li["repaired"], li["level"]))
-                if rep["brush_pixels"]:
-                    add_log(task, "画笔覆盖：%d 个像素（%d 笔）"
-                            % (rep["brush_pixels"], len(repair["strokes"])))
+                add_log(task, "局部噪点修正：重放 %d 个操作" % rep["op_count"])
+                for d in rep["ops"]:
+                    if d["kind"] == "denoise":
+                        add_log(task, "  降噪：锁定 %s，半径 %d，选区 %d 个方块，"
+                                      "改动 %d 个"
+                                % (d.get("target"), d.get("radius", 0),
+                                   d.get("source", 0), d.get("changed", 0)))
+                    elif d["kind"] == "fill":
+                        add_log(task, "  填充 %s：%d 个方块"
+                                % (d.get("hex"), d.get("pixels", 0)))
+                    elif d["kind"] == "revert":
+                        add_log(task, "  还原（去抖动）：%d 个方块" % d.get("pixels", 0))
+                    elif d["kind"] == "brush":
+                        add_log(task, "  画笔 %s：%d 个方块"
+                                % (d.get("hex"), d.get("pixels", 0)))
+                    if d.get("error"):
+                        add_log(task, "  ! 第 %d 个操作失败：%s" % (d["i"], d["error"]))
+                for wn in rep["warnings"]:
+                    add_log(task, "  ! " + wn)
 
             add_log(task, "构建投影（XZ 地面朝向 · 厚度 1 · 无底板）…")
             schem, placed, counts = build_mapart_schematic(

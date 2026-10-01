@@ -1,0 +1,32 @@
+本次打包说明（v1.35）
+=====================
+
+【产物】
+    YaniNeko_MCmapart_tool/                     发行版目录（直接拷给别人就行）
+        YaniNeko_MCmapart_tool.exe              34.2 MB，单文件程序
+        使用说明.txt
+        换端口启动.bat                          GBK 编码，默认端口占用时用它换 8899
+
+    YaniNeko_MCmapart_tool_v1.35_new.zip        上面那个目录打的压缩包（33.9 MB）
+    YaniNeko_MCmapart_tool_v1.35.zip            旧的，忽略它（见下）
+
+【关于那个 _new.zip】
+    第一次打包写出的 v1.35.zip 被 Windows 搜索索引器（SearchIndexer）
+    一直占着句柄，删不掉也改不了名，所以重打时自动写了 _new 后缀。
+    两个 zip 里的 exe 都是好的，区别只在 使用说明.txt 的排版：
+    _new 里的是修好对齐的版本。**用 _new 那个。**
+
+    等索引器松手之后（重启一次最省事），删掉旧的再重跑
+        python tools\build.py
+    就会回到正常文件名。
+
+    这是打包脚本的设计行为：zip 只是顺手的方便件，
+    被占用时自动换名并提示，不会让整次打包失败。
+
+【本版内容】
+    · 版本号 1.35
+    · 局部噪点修正改为「锁定受害者方块 + 邻域多数替换」，
+      只在打开「隐藏原图」时可用，另有隐藏选区轮廓的开关
+    · 新增全局撤回（最多 20 步，Ctrl+Z / Ctrl+Shift+Z）
+    · 调色板新增砂轮（#909090）与冰（#8A8ADC），共 290 个方块
+    · C++ 抖动核心已打进包里（/api/palette 的 native.available 为 true）

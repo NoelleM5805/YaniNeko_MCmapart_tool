@@ -1488,32 +1488,38 @@ body.dark .pal-open .pal-open-main .warn { color: #e0a83c; }
 }
 
 /* ============================================================
-   局部噪点修正（手动抖动修补）
+   局部噪点修正（手动抖动修补）+ 全局撤回
    ============================================================ */
 .rp-sec {
     margin-top: 18px;
     padding-top: 14px;
     border-top: 1px dashed var(--line, #cfd8e3);
 }
+.rp-sec[hidden] { display: none; }
 .rp-head {
     display: flex;
     align-items: baseline;
     gap: 8px;
     margin-bottom: 6px;
 }
-.rp-title {
-    font-size: 14px;
-    font-weight: 700;
-}
-.rp-sub {
-    font-size: 11px;
-    opacity: .6;
-}
-.rp-tabs {
-    display: flex;
-    gap: 6px;
+.rp-title { font-size: 14px; font-weight: 700; }
+.rp-sub { font-size: 11px; opacity: .6; }
+
+/* 分步分组：① 受害者 ② 选区 ③ 执行 */
+.rp-group {
     margin: 10px 0;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: rgba(127, 127, 127, .07);
 }
+.rp-ghead {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 7px;
+    opacity: .85;
+}
+
+.rp-tabs { display: flex; gap: 6px; margin: 10px 0; }
 .rp-tab {
     flex: 1;
     padding: 7px 4px;
@@ -1533,13 +1539,7 @@ body.dark .pal-open .pal-open-main .warn { color: #e0a83c; }
     color: #fff;
     font-weight: 600;
 }
-.rp-steps {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 12px;
-}
-.rp-steps .btn-small { width: 100%; }
+
 .rp-desc {
     font-size: 11px;
     line-height: 1.5;
@@ -1553,16 +1553,19 @@ body.dark .pal-open .pal-open-main .warn { color: #e0a83c; }
     border-radius: 7px;
     background: rgba(59, 125, 221, .10);
     border: 1px solid rgba(59, 125, 221, .28);
-    margin-bottom: 10px;
+    margin: 10px 0;
 }
 .rp-stat b { color: #3b7ddd; }
 .rp-stat .rp-warn { color: #c47f00; }
-.rp-btns, .rp-row {
+
+.rp-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
 }
+.rp-row-2 > .btn-small { flex: 1; min-width: 0; }
 .rp-lb { font-size: 12px; opacity: .8; }
 .rp-swatch {
     width: 22px;
@@ -1575,18 +1578,19 @@ body.dark .pal-open .pal-open-main .warn { color: #e0a83c; }
 .rp-hex {
     font-size: 11px;
     font-family: ui-monospace, Consolas, monospace;
-    opacity: .8;
+    opacity: .85;
+    flex: 1;
 }
+
 .rp-pal {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    max-height: 168px;
+    max-height: 132px;
     overflow-y: auto;
     padding: 6px;
     border-radius: 7px;
     border: 1px solid var(--line, #cfd8e3);
-    margin-bottom: 10px;
 }
 .rp-chip {
     width: 18px;
@@ -1598,15 +1602,27 @@ body.dark .pal-open .pal-open-main .warn { color: #e0a83c; }
     transition: transform .1s;
 }
 .rp-chip:hover { transform: scale(1.18); }
-.rp-chip.sel {
-    outline: 2px solid #3b7ddd;
+.rp-chip.sel { outline: 2px solid #3b7ddd; outline-offset: 1px; }
+.rp-chip.target {
+    outline: 2px solid #ff0080;
     outline-offset: 1px;
+    box-shadow: 0 0 0 3px rgba(255, 0, 128, .25);
 }
-.rp-foot {
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--line, #cfd8e3);
+
+.rp-exec { margin-bottom: 8px; }
+.btn-small.picking {
+    background: #ff8c00;
+    border-color: #ff8c00;
+    color: #fff;
 }
+/* 「隐藏选区」处于隐藏状态时给个明显的样式，免得以为按钮没反应 */
+.btn-small.off {
+    background: #8a94a6;
+    border-color: #8a94a6;
+    color: #fff;
+    opacity: .85;
+}
+
 kbd {
     display: inline-block;
     padding: 1px 5px;
@@ -1618,15 +1634,37 @@ kbd {
     background: rgba(127, 127, 127, .16);
 }
 
-/* 预览图上的修正画布：绝对定位盖在 <img> 正上方，
-   left/top/width/height 由 JS 按图片的实际位置和尺寸设置 —— 这样不改变原有布局 */
+/* 预览图上的修正覆盖层：布局盒和图片一致，并套用图片的 transform，
+   所以专注模式下缩放/拖动时选区会跟着图片一起动 */
 .rp-canvas {
     position: absolute;
     touch-action: none;
     cursor: crosshair;
     z-index: 3;
     border-radius: 6px;
+    transform-origin: center center;
 }
-.rp-canvas.brush { cursor: cell; }
-.rp-canvas.picking { cursor: copy; }
-.rp-canvas[hidden] { display: none; }
+
+/* 配色调参（左边栏镜像，只在专注模式显示） */
+.fx-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.fx-lb {
+    font-size: 12px;
+    opacity: .82;
+    flex: 0 0 64px;
+}
+.fx-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 6px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 6px;
+    border: 1px solid var(--line, #cfd8e3);
+    background: transparent;
+    color: inherit;
+}

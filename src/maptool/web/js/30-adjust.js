@@ -40,6 +40,10 @@
             const r = $("adj-" + k);
             if (!r) return;
             r.addEventListener("input", () => adjSet(k, r.value));
+            // 松手（change）才算一次编辑，拖动过程中不刷撤回历史
+            r.addEventListener("change", () => {
+                if (typeof undoPush === "function") undoPush();
+            });
         });
 
         $("adj-reset").addEventListener("click", () => {

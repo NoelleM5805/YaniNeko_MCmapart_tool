@@ -129,95 +129,152 @@
                                 恢复默认
                             </button>
 
+                            <!-- ================= 配色调参（专注模式下用） =================
+                                 专注模式会把主区藏起来，而算法 / 抖动 / 强度都在主区里，
+                                 所以在左边栏镜像一份，边看边调不用来回切页签。 -->
+                            <div class="rp-sec" id="fx-sec" hidden>
+                                <div class="rp-head">
+                                    <span class="rp-title">配色调参</span>
+                                    <span class="rp-sub">和主区联动</span>
+                                </div>
+                                <div class="fx-row">
+                                    <label class="fx-lb" for="fx-algo">颜色识别</label>
+                                    <select id="fx-algo"></select>
+                                </div>
+                                <div class="fx-row">
+                                    <label class="fx-lb" for="fx-dither">抖动算法</label>
+                                    <select id="fx-dither"></select>
+                                </div>
+                                <div class="adj-row">
+                                    <div class="adj-top">
+                                        <span>抖动比例</span>
+                                        <span class="adj-val" id="fx-strength-v">100</span>
+                                    </div>
+                                    <input type="range" id="fx-strength" min="0" max="100" step="1"
+                                           value="100"
+                                           title="抖动强度：0 = 不抖动，100 = 全量扩散误差">
+                                </div>
+                            </div>
+                            <!-- /配色调参 -->
+
                             <!-- ================= 局部噪点修正 ================= -->
-                            <div class="rp-sec" id="rp-sec">
+                            <div class="rp-sec" id="rp-sec" hidden>
                                 <div class="rp-head">
                                     <span class="rp-title">局部噪点修正</span>
                                     <span class="rp-sub">手动抖动修补</span>
                                 </div>
                                 <div class="hint mb-6">
-                                    抖动为了还原渐变会故意掺色。这里可以把某些区域
-                                    <b>改回本来想要的主色</b>，只影响圈定 / 涂抹到的地方。
+                                    抖动为了还原渐变会故意掺色。这里可以先把某一种
+                                    <b>受害者方块</b>锁出来，再圈一片区域，
+                                    然后按按钮把它换成周围真正的多数颜色。
+                                    只动锁定的那一种方块，选区里其它内容一概不碰。
                                 </div>
 
-                                <div class="rp-tabs">
-                                    <button class="rp-tab active" data-rpmode="lasso">套索（区域）</button>
-                                    <button class="rp-tab" data-rpmode="brush">画笔（像素）</button>
-                                </div>
-
-                                <!-- ---------- 套索 ---------- -->
-                                <div id="rp-pane-lasso">
-                                    <div class="hint mb-6">
-                                        在预览图上<b>拖拽圈出一片区域</b>，然后按
-                                        <kbd>S</kbd> 自动找出「受害者方块」并高亮。
-                                    </div>
-
-                                    <div class="rp-steps">
-                                        <button class="btn-small" id="rp-identify">
-                                            ① 识别受害者 <kbd>S</kbd>
-                                        </button>
-                                        <button class="btn-small" id="rp-apply">
-                                            ② 应用修正
-                                        </button>
-                                    </div>
-
-                                    <div class="adj-group">修补强度</div>
-                                    <div class="adj-row">
-                                        <div class="adj-top">
-                                            <span>强度</span>
-                                            <span class="adj-val" id="rp-level-v">2</span>
-                                        </div>
-                                        <input type="range" id="rp-level" min="2" max="4" step="1" value="2"
-                                               title="数字越大，改回主色的方块越多">
-                                    </div>
-                                    <div class="rp-desc" id="rp-level-desc"></div>
-
-                                    <div class="rp-stat" id="rp-stat">
-                                        还没有选区：在预览图上拖一圈
-                                    </div>
-                                    <div class="rp-btns">
-                                        <button class="btn-small" id="rp-clear-lasso">清除选区</button>
-                                    </div>
-                                </div>
-
-                                <!-- ---------- 画笔 ---------- -->
-                                <div id="rp-pane-brush" hidden>
-                                    <div class="hint mb-6">
-                                        在预览图上<b>按住涂抹</b>，把被污染的方块覆盖成笔刷颜色。
-                                        按住 <kbd>Alt</kbd> 点击可以<b>直接从预览取色</b>。
-                                    </div>
-
+                                <!-- ① 受害者方块 -->
+                                <div class="rp-group">
+                                    <div class="rp-ghead">① 受害者方块（要清掉的那种杂色）</div>
                                     <div class="rp-row">
-                                        <span class="rp-lb">笔刷颜色</span>
-                                        <span class="rp-swatch" id="rp-color"></span>
-                                        <span class="rp-hex" id="rp-color-hex">—</span>
+                                        <span class="rp-swatch" id="rp-target-dot" hidden></span>
+                                        <span class="rp-hex" id="rp-target-hex">未选择</span>
+                                        <button class="btn-small" id="rp-target-clear"
+                                                title="取消锁定">✕</button>
                                     </div>
-
-                                    <div class="adj-row">
-                                        <div class="adj-top">
-                                            <span>笔刷半径（方块）</span>
-                                            <span class="adj-val" id="rp-size-v">6</span>
-                                        </div>
-                                        <input type="range" id="rp-size" min="1" max="40" step="1" value="6"
-                                               title="以成品方块数为单位；预览被缩小过也按同一块地方涂抹">
-                                    </div>
-
                                     <div class="rp-row">
-                                        <button class="btn-small" id="rp-pick">
-                                            取色（Alt+点击）
-                                        </button>
-                                        <button class="btn-small" id="rp-clear-strokes">
-                                            清除涂抹
+                                        <button class="btn-small" id="rp-pick-target">
+                                            🎯 从预览图拾取
                                         </button>
                                     </div>
-
-                                    <div class="adj-group">从调色板选色（游戏内可用颜色）</div>
+                                    <div class="hint mb-6" id="rp-pal-hint">
+                                        点色块 = 设为 <b>受害者方块</b>
+                                    </div>
                                     <div class="rp-pal" id="rp-pal"></div>
                                 </div>
 
-                                <div class="rp-foot">
-                                    <button class="btn-small btn-block" id="rp-reset">
-                                        全部清除修正
+                                <div class="rp-tabs">
+                                    <button class="rp-tab active" data-rptool="lasso">套索（区域）</button>
+                                    <button class="rp-tab" data-rptool="brush">画笔（像素）</button>
+                                </div>
+
+                                <!-- ② 选区 -->
+                                <div id="rp-pane-lasso">
+                                    <div class="rp-group">
+                                        <div class="rp-ghead">② 圈出选区</div>
+                                        <div class="hint mb-6">
+                                            在预览图上<b>拖拽</b>圈一片区域。圈完只会显示
+                                            洋红色的「受害者」预览，<b>不会立刻修改</b>。
+                                        </div>
+                                        <div class="rp-row rp-row-2">
+                                            <button class="btn-small" id="rp-hide"
+                                                    title="把预览图上的选区轮廓收起来，方便看清画面（不改变任何修改）">
+                                                👁 隐藏选区
+                                            </button>
+                                            <button class="btn-small" id="rp-clear-sel" disabled>
+                                                取消当前选区
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="rp-group">
+                                        <div class="rp-ghead">③ 执行</div>
+                                        <div class="adj-row">
+                                            <div class="adj-top">
+                                                <span>修复强度</span>
+                                                <span class="adj-val" id="rp-level-v">5</span>
+                                            </div>
+                                            <input type="range" id="rp-level" min="1" max="8" step="1" value="5"
+                                                   title="决定邻域半径，越大清得越干净">
+                                        </div>
+                                        <div class="rp-desc" id="rp-level-desc"></div>
+
+                                        <button class="btn-primary btn-block rp-exec" id="rp-exec" disabled>
+                                            ✅ 执行降噪
+                                        </button>
+                                        <div class="rp-row rp-row-2">
+                                            <button class="btn-small" id="rp-fill" disabled>🎨 填充</button>
+                                            <button class="btn-small" id="rp-revert" disabled
+                                                    title="把选区恢复成不做抖动的样子">↩ 还原</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 画笔 -->
+                                <div id="rp-pane-brush" hidden>
+                                    <div class="rp-group">
+                                        <div class="rp-ghead">画笔</div>
+                                        <div class="hint mb-6">
+                                            在预览图上<b>按住涂抹</b>，把方块覆盖成笔刷颜色。
+                                            松开鼠标才算一次操作（可以撤回）。
+                                        </div>
+                                        <div class="rp-row">
+                                            <span class="rp-swatch" id="rp-color"></span>
+                                            <span class="rp-hex" id="rp-color-hex">—</span>
+                                            <button class="btn-small" id="rp-pick-brush">吸取</button>
+                                        </div>
+                                        <div class="adj-row">
+                                            <div class="adj-top">
+                                                <span>笔刷半径（方块）</span>
+                                                <span class="adj-val" id="rp-size-v">6</span>
+                                            </div>
+                                            <input type="range" id="rp-size" min="1" max="40" step="1" value="6"
+                                                   title="以成品方块数为单位">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="rp-stat" id="rp-stat">
+                                    先选受害者方块，再到预览图上圈选区
+                                </div>
+
+                                <div class="rp-group">
+                                    <div class="rp-ghead">撤回</div>
+                                    <div class="rp-row rp-row-2">
+                                        <button class="btn-small" id="rp-undo" disabled>↩ 撤回</button>
+                                        <button class="btn-small" id="rp-redo" disabled>↪ 重做</button>
+                                    </div>
+                                    <div class="hint" id="undo-state">还没有可撤回的编辑</div>
+                                    <button class="btn-small btn-block" id="rp-clear-all"
+                                            style="margin-top:6px">
+                                        清除全部修正
                                     </button>
                                 </div>
                             </div>
@@ -637,6 +694,7 @@
     <script src="/static/js/80-slice.js"></script>
     <script src="/static/js/85-lichen.js"></script>
     <script src="/static/js/88-repair.js"></script>
+    <script src="/static/js/89-undo.js"></script>
     <script src="/static/js/90-init.js"></script>
     <script src="/static/js/92-focus.js"></script>
     <script src="/static/js/99-start.js"></script>

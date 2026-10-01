@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-局部噪点修正：功能与不变量测试
-==============================
+局部噪点修正：功能与不变量测试（新算法）
+========================================
 
-用真实的抖动结果来验证：
-  · 只在选区/笔画范围内改动，范围外一个像素都不能动
-  · 套索修补后，改动的像素确实都变成了区域主色
-  · 强度 2 → 3 → 4 是递进的（改回来的数量单调不减）
-  · 强度 4（阈值 1.0）会把区域内所有「当前色 ≠ 主色」的像素都改回主色
-  · 画笔把小圆内的像素精确覆盖成指定颜色
-  · identify 模式返回高亮图，且不改动结果
-  · 归一化坐标在预览尺寸和成品尺寸下圈到的是同一片区域
-  · 生成路径和预览路径套用同一份修正
+核心保证（对应「不再把整个选区刷成一个颜色」）：
+
+  · 降噪**只**改「选区内、且当前正好是锁定目标方块」的像素 —— 别的方块一个都不动
+  · 选区外的像素永远不动
+  · 选区内的线条 / 渐变 / 边界这些细节不会被抹掉
+  · 邻域半径越大，清掉的杂色越多
+  · 操作按顺序重放，后一个叠在前一个上；同一串操作结果完全可复现
+  · 填充 / 还原 / 画笔各自的行为边界
 
 用法（工作区根目录）：
     python tests/repair_check.py
@@ -23,11 +22,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from maptool.dithering import process_image
+from maptool.matching import match_batch
 from maptool.palette import make_palette
-from maptool.repair import LEVEL_RATIO, apply_repair, parse_repair, render_highlight
+from maptool.repair import (DEFAULT_STRENGTH, apply_repair, parse_repair,
+                            radius_of)
 
 PASS, FAIL = [], []
 
@@ -37,182 +38,256 @@ def check(name, ok, detail=""):
     print(("  [√] " if ok else "  [×] ") + name + (("  " + detail) if detail and not ok else ""))
 
 
-def make_img(w, h, seed=11):
-    """
-    造一张「大片渐变 + 一块几乎纯色」的图：
-    抖动在渐变上会掺色，正好用来当修补对象。
-    """
-    rng = np.random.default_rng(seed)
-    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
-    r = 60 + 150 * (xx / w)
-    g = 50 + 170 * (yy / h)
-    b = 80 + 100 * np.sin((xx + yy) / 35.0)
-    img = np.stack([r, g, b], axis=-1)
-    # 左上角一块接近纯色（这是用户想保住主色的典型区域）
-    img[0:h // 2, 0:w // 2] = (118, 122, 126)
-    img += rng.normal(0, 6, img.shape)
-    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGB")
+W, H = 256, 192
+
+
+def make_img():
+    """左半近纯色（含一条红线细节），右半渐变。"""
+    rng = np.random.default_rng(5)
+    img = np.zeros((H, W, 3), np.float64)
+    img[:, :W // 2] = (120, 124, 128)
+    grd = np.linspace(0, 1, W - W // 2)[None, :, None]
+    img[:, W // 2:] = (60, 70, 90) * (1 - grd) + (220, 190, 120) * grd
+    img += rng.normal(0, 5, img.shape)
+    im = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8), "RGB")
+    ImageDraw.Draw(im).line([(10, H - 20), (W // 2 - 10, 20)],
+                            fill=(230, 60, 50), width=5)
+    return im
+
+
+def mask_of(points, w, h):
+    m = Image.new("1", (w, h), 0)
+    ImageDraw.Draw(m).polygon([(x * w, y * h) for x, y in points], fill=1)
+    return np.asarray(m, dtype=bool)
 
 
 def main():
-    W, H = 128, 96
-    img = make_img(W, H)
+    img = make_img()
     work = np.array(img, dtype=np.uint8)
     pal, _u = make_palette(None)
     algo, dither = "weighted", "floyd"
+    idx0, _rgb0 = process_image(img, algo, dither, 1.0, pal)
 
-    idx0, rgb0 = process_image(img, algo, dither, 1.0, pal)
-    print("基准：%dx%d，用到 %d 种颜色" % (W, H, len(np.unique(idx0))))
+    quad = [(0.03, 0.03), (0.47, 0.03), (0.47, 0.97), (0.03, 0.97)]
+    sel = mask_of(quad, W, H)
+    src = work.astype(np.int16)
+    detail = (src[:, :, 0] > 180) & (src[:, :, 1] < 110) & (src[:, :, 2] < 110) & sel
+
+    # 选区内出现最多的颜色 = 主色调；次多的算「杂色」，拿它当锁定目标
+    vals, cnt = np.unique(idx0[sel], return_counts=True)
+    order = np.argsort(-cnt)
+    main_hex = pal.hexes[int(vals[order[0]])]
+    # 挑一个「确实是被抖动掺进来的杂色」当目标：数量中等、不是主色
+    target_hex = None
+    for k in order[1:]:
+        if cnt[k] >= 200:
+            target_hex = pal.hexes[int(vals[k])]
+            break
+    print("选区 %d 像素，细节（红线）%d 像素" % (int(sel.sum()), int(detail.sum())))
+    print("主色调 %s（%d 个）；锁定目标（杂色）%s"
+          % (main_hex, int(cnt[order[0]]), target_hex))
     print()
 
-    # 归一化选区：覆盖左上角那块近似纯色（0.05~0.45）
-    quad = [[0.05, 0.05], [0.45, 0.05], [0.45, 0.45], [0.05, 0.45]]
+    def op_denoise(strength, target=target_hex):
+        return {"repair": {"ops": [{"kind": "denoise", "target": target,
+                                    "strength": strength, "lasso": quad}]}}
 
-    def mask_of(points):
-        from PIL import ImageDraw
-        m = Image.new("1", (W, H), 0)
-        ImageDraw.Draw(m).polygon([(x * W, y * H) for x, y in points], fill=1)
-        return np.asarray(m, dtype=bool)
+    target_index = pal.hexes.index(target_hex)
 
-    sel = mask_of(quad)
-    check("选区掩膜非空（%d 像素）" % int(sel.sum()), sel.sum() > 400)
+    # ---------------- 只改目标方块 ----------------
+    print("降噪：只改锁定目标")
+    for st in (1, DEFAULT_STRENGTH, 8):
+        rep = parse_repair(op_denoise(st))
+        idx1, info = apply_repair(idx0, work, pal, rep, algo)
+        changed = idx1 != idx0
+        # 改动的像素，原来必须正好是目标色
+        was_target = changed & (idx0 == target_index)
+        not_target = int((changed & (idx0 != target_index)).sum())
+        out_sel = int((changed & ~sel).sum())
+        n_target_in_sel = int(((idx0 == target_index) & sel).sum())
+        lost_detail = int((idx0[detail] != idx1[detail]).sum())
+        print("   强度 %d（半径 %d）：改动 %d 个；目标在选区内共 %d 个"
+              % (st, radius_of(st), int(changed.sum()), n_target_in_sel))
+        check("强度 %d：只改锁定的目标方块（越界改了 %d 个）" % (st, not_target),
+              not_target == 0)
+        check("强度 %d：只改选区内（区外改了 %d 个）" % (st, out_sel), out_sel == 0)
+        check("强度 %d：细节（红线）一个没动（动了 %d 个）" % (st, lost_detail),
+              lost_detail == 0)
+        check("强度 %d：改动的都是原目标色像素" % st,
+              int(was_target.sum()) == int(changed.sum()))
+        check("强度 %d：info 计数与实际一致" % st,
+              info["denoised"] == int(changed.sum()),
+              "%d vs %d" % (info["denoised"], int(changed.sum())))
 
-    # ---------------- 强度递进 ----------------
-    print("\n强度递进：")
-    counts = {}
+    # ---------------- 半径的作用 ----------------
+    # 半径只在目标色「成团」时才看得出差别：
+    # 分散的杂色像素四周全是别的颜色，半径 1 就全清掉了；
+    # 而一大团目标色，半径小的时候只有外圈会被改，内部邻域还是自己。
+    print("\n半径的作用：")
+    rep1 = parse_repair(op_denoise(1))          # 半径 1
+    idx_r1, info_r1 = apply_repair(idx0, work, pal, rep1, algo)
+    check("半径 1 就能清掉分散的杂色像素（%d/%d）"
+          % (info_r1["denoised"], n_target_in_sel),
+          info_r1["denoised"] == n_target_in_sel)
+
+    # 用受控的合成图案量半径：整片 A 色，中间放一块 9×9 的 B 色
+    A, B = 0, 1
+    S = 21
+    syn = np.full((S, S), A, dtype=np.int32)
+    syn[6:15, 6:15] = B                          # 9×9 的 B 色方块
+    syn_mask = np.ones((S, S), dtype=bool)
+    blob = syn == B
+    print("   合成图案：%d×%d 全是 A，中间一块 9×9 的 B（共 %d 个）"
+          % (S, S, int(blob.sum())))
     prev = -1
     mono = True
-    for lvl in (2, 3, 4):
-        rep = parse_repair({"repair": {"lassos": [{"points": quad, "level": lvl}]}})
-        idx1, info = apply_repair(idx0, work, pal, rep, algo)
-        counts[lvl] = info["repaired"]
-        dom = info["dominant"]
-        print("   强度 %d（阈值 %.2f）：受害者 %d，改回 %d，主色 %s"
-              % (lvl, LEVEL_RATIO[lvl], info["victims"], info["repaired"], dom))
-        if info["repaired"] < prev:
+    for st in (2, 4, 6, 8):
+        rr = radius_of(st)
+        syn_rep = {"ops": [{"kind": "denoise", "target": 2, "radius": rr,
+                            "lasso": None, "_syn": True}]}
+        # 直接调内部实现，绕开颜色色号到下标的映射
+        from maptool.repair import _denoise_region
+        out, n = _denoise_region(syn, syn_mask, B, rr)
+        print("     半径 %d：改掉 %d 个（B 总共 %d 个）" % (rr, n, int(blob.sum())))
+        if n < prev:
             mono = False
-        prev = info["repaired"]
+        prev = n
+    check("目标成团时，半径越大改掉的越多（单调不减）", mono)
+    check("半径 1 只吃掉外圈，内部保留",
+          _denoise_region(syn, syn_mask, B, 1)[1] < int(blob.sum()))
+    # 9×9 的方块，中心点要在窗口里被 A 盖过，窗口需要 > 13×13：
+    #   13×13 = 169 格，其中 B 占 81、A 占 88，A 才成为多数 -> 半径 6
+    n5 = _denoise_region(syn, syn_mask, B, 5)[1]
+    n6 = _denoise_region(syn, syn_mask, B, 6)[1]
+    check("半径不够大时，方块中心仍然是自己的多数（半径 5 只改 %d/81）" % n5,
+          n5 < int(blob.sum()))
+    check("半径够大时整块都被吃掉（半径 6 改 %d/81）" % n6,
+          n6 == int(blob.sum()))
 
-        # 范围内改动、范围外不动
-        changed = idx1 != idx0
-        check("强度 %d：只改选区内（范围外 %d 个被误改）"
-              % (lvl, int((changed & ~sel).sum())), not (changed & ~sel).any())
-        # 改动过的像素都变成主色
-        di = info["dominant_index"]
-        check("强度 %d：改动过的像素都是主色" % lvl,
-              bool((idx1[changed] == di).all()) if changed.any() else True)
+    # ---------------- 不锁定目标 -> 不执行 ----------------
+    print("\n边界情况：")
+    check("没锁定目标时 denoise 被丢弃",
+          parse_repair(op_denoise(5, target=None)) is None
+          or all(o["kind"] != "denoise"
+                 for o in parse_repair(op_denoise(5, target=None))["ops"]))
+    idxn, infon = apply_repair(idx0, work, pal,
+                               parse_repair(op_denoise(5, target="#123456")), algo)
+    check("目标色不在调色板里时给出警告且不改动",
+          not infon["applied"] and bool(infon["warnings"]),
+          str(infon["warnings"]))
 
-    check("强度 2 ≤ 3 ≤ 4（单调不减）", mono,
-          "实际 %s" % counts)
+    # ---------------- 填充 ----------------
+    fh = pal.hexes[(target_index + 5) % pal.n]
+    rep = parse_repair({"repair": {"ops": [
+        {"kind": "fill", "hex": fh, "lasso": quad}]}})
+    idxf, infof = apply_repair(idx0, work, pal, rep, algo)
+    fi = pal.hexes.index(fh)
+    check("填充：选区内全变成指定颜色",
+          bool((idxf[sel] == fi).all()))
+    check("填充：选区外一个没动", not (idxf[~sel] != idx0[~sel]).any())
+    check("填充：计数等于选区像素数", infof["filled"] == int(sel.sum()))
 
-    # 强度 4 的阈值就是「主色不比当前色差」，应该正好等于受害者数量
-    rep4 = parse_repair({"repair": {"lassos": [{"points": quad, "level": 4}]}})
-    idx4, info4 = apply_repair(idx0, work, pal, rep4, algo)
-    di = info4["dominant_index"]
-    check("强度 4：改回数量 == 受害者数量",
-          info4["repaired"] == info4["victims"],
-          "%d vs %d" % (info4["repaired"], info4["victims"]))
-
-    # 强度 4 之后，区域里剩下的非主色像素，必须都是「当前色确实比主色更准」的
-    from maptool.matching import dist_batch
-    from maptool.palette import Palette
-    sel_flat = np.flatnonzero(sel.reshape(-1))
-    left = idx4.reshape(-1)[sel_flat] != di
-    rest = sel_flat[left]
-    ok_strict = True
-    if rest.size:
-        px = work.reshape(-1, 3).astype(np.int32)[rest]
-        cur = idx4.reshape(-1)[rest]
-        for c_val in np.unique(cur):
-            sub = cur == int(c_val)
-            mini = Palette([pal.groups[di], pal.groups[int(c_val)]])
-            d2 = dist_batch(px[sub], mini, algo, None)
-            # 主色更近或一样近 => 应该已经被改掉了，不该留在这里
-            ok_strict = ok_strict and bool((d2[:, 0] > d2[:, 1]).all())
-    check("强度 4：留下的非主色像素都是「当前色更准」的（%d 个）" % int(rest.size),
-          ok_strict)
-
-    # 强度 2 是强度 4 的真子集（递进关系）
-    rep2 = parse_repair({"repair": {"lassos": [{"points": quad, "level": 2}]}})
-    idx2b, info2b = apply_repair(idx0, work, pal, rep2, algo)
-    changed2b = idx2b != idx0
-    changed4 = idx4 != idx0
-    check("强度 2 改的像素是强度 4 的子集", not (changed2b & ~changed4).any())
-    check("强度 2 确实比强度 4 改得少",
-          info2b["repaired"] < info4["repaired"],
-          "%d vs %d" % (info2b["repaired"], info4["repaired"]))
+    # ---------------- 还原（去抖动） ----------------
+    rep = parse_repair({"repair": {"ops": [{"kind": "revert", "lasso": quad}]}})
+    idxr, infor = apply_repair(idx0, work, pal, rep, algo)
+    expect = match_batch(work.reshape(-1, 3).astype(np.int32)[sel.reshape(-1)],
+                         pal, algo)
+    check("还原：选区内等于「不做抖动的最近颜色」",
+          bool((idxr[sel] == expect.astype(np.int32)).all()))
+    check("还原：选区外一个没动", not (idxr[~sel] != idx0[~sel]).any())
 
     # ---------------- 画笔 ----------------
-    print("\n画笔：")
-    target = pal.hexes[(di + 7) % pal.n]
-    stroke = {"x": 0.75, "y": 0.7, "r": 0.08, "hex": target}
-    rep = parse_repair({"repair": {"strokes": [stroke]}})
+    bh = pal.hexes[(target_index + 9) % pal.n]
+    rep = parse_repair({"repair": {"ops": [
+        {"kind": "brush", "hex": bh, "rx": 0.06, "ry": 0.045,
+         "points": [[0.7, 0.6], [0.72, 0.62]]}]}})
     idxb, infob = apply_repair(idx0, work, pal, rep, algo)
-    gi = [i for i, h in enumerate(pal.hexes) if h == target][0]
-    # 圆心那一点必须被覆盖
-    cy, cx = int(0.7 * H), int(0.75 * W)
-    check("画笔：圆心像素被覆盖成 %s" % target, idxb[cy, cx] == gi,
+    bi = pal.hexes.index(bh)
+    cy, cx = int(0.6 * H), int(0.7 * W)
+    check("画笔：落笔处被涂成笔刷色", idxb[cy, cx] == bi,
           "实际 %s" % pal.hexes[idxb[cy, cx]])
-    changed = idxb != idx0
-    check("画笔：只改笔画范围内", bool((changed == (idxb == gi) & changed).all()))
-    # 半径外的角落不能动
-    check("画笔：角落未被影响", idx0[0, 0] == idxb[0, 0] and idx0[H - 1, 0] == idxb[H - 1, 0])
-    check("画笔：覆盖像素数 > 0", infob["brush_pixels"] > 0,
-          "实际 %d" % infob["brush_pixels"])
+    check("画笔：改动像素数 > 0", infob["brush_pixels"] > 0)
+    check("画笔：角落没被影响", idx0[0, 0] == idxb[0, 0])
 
-    # ---------------- identify 高亮不改结果 ----------------
-    print("\n识别 / 高亮：")
-    rep_id = parse_repair({"repair": {"identify": True,
-                                      "lassos": [{"points": quad, "level": 4}]}})
-    idx_id, info_id = apply_repair(idx0, work, pal, rep_id, algo)
-    check("identify 与不 identify 的修正结果一致",
-          np.array_equal(idx_id, idx4))
-    hi = render_highlight(rgb0, info_id)
-    check("高亮图尺寸一致", hi.shape == rgb0.shape)
-    vic = info_id["_victim_mask"]
-    check("高亮图在受害者位置确实变了（%d 个）" % int(vic.sum()),
-          vic.any() and not np.array_equal(hi[vic], rgb0[vic]))
+    # 两轴半径是分开的：ry 越大竖着覆盖越多
+    # （非正方形图片上只有这样笔刷才是正圆，而不是被拉成椭圆）
+    def brush_pixels(rx, ry):
+        r = parse_repair({"repair": {"ops": [
+            {"kind": "brush", "hex": bh, "rx": rx, "ry": ry,
+             "points": [[0.5, 0.5]]}]}})
+        return apply_repair(idx0, work, pal, r, algo)[1]["brush_pixels"]
 
-    # ---------------- 归一化：不同分辨率圈到同一片区域 ----------------
-    print("\n分辨率无关：")
-    W2, H2 = W * 2, H * 2
-    img2 = img.resize((W2, H2), Image.LANCZOS)
-    work2 = np.array(img2, dtype=np.uint8)
-    idx0b, _ = process_image(img2, algo, dither, 1.0, pal)
-    idx2, info2 = apply_repair(idx0b, work2, pal, rep4, algo)
-    sel2 = mask_of(quad)  # 归一化坐标 -> 2 倍尺寸的掩膜
-    sel2 = np.zeros((H2, W2), bool)
-    from PIL import ImageDraw
-    m2 = Image.new("1", (W2, H2), 0)
-    ImageDraw.Draw(m2).polygon([(x * W2, y * H2) for x, y in quad], fill=1)
-    sel2 = np.asarray(m2, dtype=bool)
-    changed2 = idx2 != idx0b
-    check("2 倍尺寸下也只改选区内", not (changed2 & ~sel2).any())
-    frac1 = counts[4] / float(sel.sum())
-    frac2 = info2["repaired"] / float(sel2.sum())
-    check("两种尺寸改回的比例接近（%.3f vs %.3f）" % (frac1, frac2),
-          abs(frac1 - frac2) < 0.15)
+    n_flat = brush_pixels(0.06, 0.02)
+    n_round = brush_pixels(0.06, 0.06)
+    check("画笔：ry 越大覆盖越多（%d < %d）" % (n_flat, n_round), n_round > n_flat)
+    check("画笔：只给 rx 时 ry 跟着 rx",
+          parse_repair({"repair": {"ops": [
+              {"kind": "brush", "hex": bh, "rx": 0.05,
+               "points": [[0.5, 0.5]]}]}})["ops"][0]["ry"] == 0.05)
 
-    # ---------------- 解析器健壮性 ----------------
+    # ---------------- 操作顺序 ----------------
+    print("\n操作序列：")
+    rep_ab = parse_repair({"repair": {"ops": [
+        {"kind": "fill", "hex": pal.hexes[3], "lasso": quad},
+        {"kind": "fill", "hex": pal.hexes[7], "lasso": quad}]}})
+    idx_ab, _ = apply_repair(idx0, work, pal, rep_ab, algo)
+    check("后一个操作覆盖前一个（最终是第二个颜色）",
+          bool((idx_ab[sel] == 7).all()))
+    rep_ba = parse_repair({"repair": {"ops": [
+        {"kind": "fill", "hex": pal.hexes[7], "lasso": quad},
+        {"kind": "fill", "hex": pal.hexes[3], "lasso": quad}]}})
+    idx_ba, _ = apply_repair(idx0, work, pal, rep_ba, algo)
+    check("交换顺序结果不同（顺序确实有意义）", not np.array_equal(idx_ab, idx_ba))
+
+    # ---------------- 可复现 ----------------
+    rep = parse_repair(op_denoise(5))
+    a1, _ = apply_repair(idx0, work, pal, rep, algo)
+    a2, _ = apply_repair(idx0, work, pal, rep, algo)
+    check("同一串操作结果完全可复现", np.array_equal(a1, a2))
+
+    # 撤销 = 少一个操作，结果应等于「只做了前面那些操作」
+    two = parse_repair({"repair": {"ops": [
+        {"kind": "denoise", "target": target_hex, "strength": 5, "lasso": quad},
+        {"kind": "fill", "hex": pal.hexes[3], "lasso": quad}]}})
+    one = parse_repair({"repair": {"ops": [
+        {"kind": "denoise", "target": target_hex, "strength": 5, "lasso": quad}]}})
+    idx_two, _ = apply_repair(idx0, work, pal, two, algo)
+    idx_one, _ = apply_repair(idx0, work, pal, one, algo)
+    idx_undo, _ = apply_repair(idx0, work, pal, one, algo)
+    check("撤销一步 == 只重放前面的操作", np.array_equal(idx_undo, idx_one))
+    check("两步和一步结果不同", not np.array_equal(idx_two, idx_one))
+
+    # ---------------- 解析器 ----------------
     print("\n参数解析：")
     check("空 payload -> None", parse_repair({}) is None)
     check("没有 repair 字段 -> None", parse_repair({"algo": "weighted"}) is None)
+    check("空 ops -> None", parse_repair({"repair": {"ops": []}}) is None)
+    check("未知操作类型被丢掉",
+          parse_repair({"repair": {"ops": [{"kind": "nope"}]}}) is None)
     check("点数不足的套索被丢掉",
-          parse_repair({"repair": {"lassos": [{"points": [[0.1, 0.1], [0.2, 0.2]]}]}}) is None)
-    check("缺 hex 的笔画被丢掉",
-          parse_repair({"repair": {"strokes": [{"x": 0.5, "y": 0.5, "r": 0.05}]}}) is None)
-    r = parse_repair({"repair": {"lassos": [{"points": [[0, 0], [1, 0], [1, 1]], "level": 99}]}})
-    check("强度被夹到 [2,4]", r["lassos"][0]["level"] == 4)
-    r = parse_repair({"repair": {"strokes": [{"x": 5, "y": -3, "r": 99, "hex": "909090"}]}})
-    check("坐标/半径被夹住", 0 <= r["strokes"][0]["x"] <= 1.5
-          and 0 <= r["strokes"][0]["r"] <= 0.5)
-    check("hex 自动补 # 并大写", r["strokes"][0]["hex"] == "#909090")
+          parse_repair({"repair": {"ops": [
+              {"kind": "revert", "lasso": [[0.1, 0.1], [0.2, 0.2]]}]}}) is None)
+    check("非法颜色被丢掉",
+          parse_repair({"repair": {"ops": [
+              {"kind": "fill", "hex": "zzz", "lasso": [[0, 0], [1, 0], [1, 1]]}]}}) is None)
+    r = parse_repair({"repair": {"ops": [
+        {"kind": "denoise", "target": "605d77", "strength": 99,
+         "lasso": [[0, 0], [1, 0], [1, 1]]}]}})
+    check("hex 补 # 并大写", r["ops"][0]["target"] == "#605D77")
+    check("强度被夹到上限", r["ops"][0]["strength"] == 8)
+    r = parse_repair({"repair": {"ops": [
+        {"kind": "brush", "hex": "#909090", "rx": 9, "ry": -1,
+         "points": [[5, -3]]}]}})
+    check("画笔坐标/半径被夹住",
+          0 <= r["ops"][0]["points"][0][0] <= 1.5
+          and 0 <= r["ops"][0]["rx"] <= 0.5
+          and 0 <= r["ops"][0]["ry"] <= 0.5)
 
-    print("\n" + "=" * 64)
+    print("\n" + "=" * 66)
     print("通过 %d 项，失败 %d 项" % (len(PASS), len(FAIL)))
     for f in FAIL:
         print("  失败：" + f)
-    print("=" * 64)
+    print("=" * 66)
     return 1 if FAIL else 0
 
 

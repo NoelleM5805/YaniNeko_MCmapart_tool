@@ -445,6 +445,26 @@ def compare_icons(a, b):
     return []
 
 
+def shared_selection(base):
+    """
+    从「基准服务」的调色板里挑一份方块选择，两边共用。
+
+    调色板后来有意新增了方块（砂轮 / 冰），如果各自拿自己的调色板去挑，
+    选项就不一样了，比出来的差异是调色板差异而不是代码差异。
+    """
+    _st, pal = jreq(base + "/api/palette")
+    return [g["blocks"][0]["id"] for g in (pal.get("groups") or [])[::3]]
+
+
+def compare_any(key, a, b):
+    """按 key 选合适的比对方式（调色板 / 图标要放行有意变更的那部分）。"""
+    if key == "palette":
+        return compare_palette(a, b)
+    if key == "icons":
+        return compare_icons(a, b)
+    return compare(a, b, key)
+
+
 def main():
     img = make_test_image(os.path.join(TMP, "test.png"))
     old_proc = new_proc = None
@@ -455,8 +475,7 @@ def main():
         new_base = "http://127.0.0.1:%d" % NEW_PORT
 
         # 两边共用同一份方块选择（取自旧版调色板；这些 ID 新版也都还在）
-        _st, old_pal = jreq(old_base + "/api/palette")
-        sel = [g["blocks"][0]["id"] for g in (old_pal.get("groups") or [])[::3]]
+        sel = shared_selection(old_base)
         print("共用方块选择：%d 个" % len(sel))
 
         print("跑旧版测试集…")
@@ -468,12 +487,7 @@ def main():
         for k in sorted(set(a) | set(b)):
             if k.startswith("_"):
                 continue
-            if k == "palette":
-                d = compare_palette(a.get(k), b.get(k))
-            elif k == "icons":
-                d = compare_icons(a.get(k), b.get(k))
-            else:
-                d = compare(a.get(k), b.get(k), k)
+            d = compare_any(k, a.get(k), b.get(k))
             check(k, not d, "; ".join(d[:6]))
 
         # 没带 repair 参数时：旧版一定没有 repair 字段；新版凡是成功的响应，

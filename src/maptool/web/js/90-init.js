@@ -18,10 +18,14 @@
         adjSyncLabels();
 
         // 表单改动后顺带记进配置（防抖，跟随预览节奏）
+        // change 才算一次编辑，记一条可撤回的状态（见 89-undo.js）
         FORM_FIELDS.forEach(id => {
             const el = $(id);
             el.addEventListener("input", formPersist);
             el.addEventListener("change", formPersist);
+            el.addEventListener("change", () => {
+                if (typeof undoPush === "function") undoPush();
+            });
         });
 
         // 同色分配策略

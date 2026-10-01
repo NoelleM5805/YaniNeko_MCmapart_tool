@@ -106,6 +106,7 @@
         $("pal-alloc").addEventListener("change", () => {
             CFG.alloc = $("pal-alloc").value;
             cfgSave(true);
+            if (typeof undoPush === "function") undoPush();
             schedulePreview(200);
             setStatus("同色分配策略：" + $("pal-alloc").selectedOptions[0].textContent);
         });
@@ -303,6 +304,8 @@
             CFG.blocks = [...PAL.selected];
             cfgSave();
             palStat();
+            // 方块选择会改变成品 -> 记一条可撤回的状态（见 89-undo.js）
+            if (typeof undoPush === "function") undoPush();
             schedulePreview(300);
         }
 

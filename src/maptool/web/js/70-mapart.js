@@ -4,6 +4,9 @@
         // ============================================================
         // 地图画生成
         // ============================================================
+        // 第一次成功预览之后记一条初始状态，这样之后每一步编辑都能撤回（见 89-undo.js）
+        let undoInit_pushed = false;
+
         const MP = {
             file: null, sid: null, imageInfo: null,
             taskId: null, resultBlob: null, busy: false,
@@ -60,6 +63,10 @@
             MP.file = null; MP.sid = null; MP.imageInfo = null;
             MP.lastPreviewSrc = ""; MP.lastOriginalSrc = "";
             clearFileInfo("mp");
+            // 换图 = 重新开始，修正和撤回历史都清掉
+            if (typeof RP !== "undefined") { RP.ops = []; RP.pending = null; }
+            if (typeof undoReset === "function") undoReset();
+            undoInit_pushed = false;
             $("mp-ratios").innerHTML = '<div class="empty">上传图片后自动分析并给出推荐</div>';
             $("mp-preview-orig").innerHTML = '<div class="placeholder">原图缩略图</div>';
             $("mp-preview-pal").innerHTML = '<div class="placeholder">调色板预览</div>' +
@@ -177,13 +184,11 @@
 
                 renderUsage(data.counts, data.total_blocks,
                     data.estimated ? "预览估算" : "预览");
-                // 挂上修正画布（预览图每次都被 innerHTML 换掉，需要重新挂）
-                rpNoteSize(data.width);
+                // 修正覆盖层：预览图每次都被 innerHTML 换掉，需要重新挂一次
+                rpNoteSize(data.width, data.height);
                 rpAttach();
                 rpShowInfo(data.repair);
-                if (RP.hasResult && !data.repair && rpActive()) {
-                    rpStat('<span class="rp-warn">修正没有生效</span>（可能是调色板变了）');
-                }
+                if (!undoInit_pushed && MP.sid) { undoPush(); undoInit_pushed = true; }
                 setStatus(`预览：${data.width}×${data.height}，共 ${data.blocks} 方块，用色 ${used} 种`);
                 setBadge(`${data.blocks} 方块 · 预览`, "ok");
             } catch (e) {
