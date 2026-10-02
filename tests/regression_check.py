@@ -248,6 +248,11 @@ def battery(base, img_path, sel_some):
                     "has_key": "repair" in js,
                     "val": js.pop("repair", None),
                 })
+                # 新版预览多了「专业像素画」调色板索引字段，旧版没有；
+                # 这些不参与旧/新版等价性比较。
+                for k in ("pixels_b64", "pixels_encoding", "pixels_width",
+                          "pixels_height", "palette", "dither_mode", "dither_strength"):
+                    js.pop(k, None)
             out["preview_%d_%s" % (i, tag)] = {"status": st, "body": js}
     out["_repair_field"] = repair_seen
 

@@ -66,13 +66,24 @@ OLD_PROXY, NEW_PROXY = 8821, 8822
 #   40-palette / 70-mapart : 局部噪点修正接入
 #   30-adjust / 90-init    : 全局撤回接入（在 change 事件里记一条状态）
 #   99-start               : 建左边栏的「配色调参」镜像
-MODIFIED_JS = {"40-palette.js", "70-mapart.js", "30-adjust.js",
-               "90-init.js", "99-start.js"}
+MODIFIED_JS = {"40-palette.js", "30-adjust.js",
+               "90-init.js", "99-start.js", "10-modal.js"}
 
 # 原有逻辑被**有意改写**的文件：不能再用「子序列」检查，
 # 但要求原有的顶层函数/常量一个都不能少（防手滑删掉东西）。
 #   92-focus : 平移改成右键，左键留给套索/画笔
-CHANGED_JS = {"92-focus.js"}
+#   70-mapart : 预览改成 Canvas 调色板索引像素画
+CHANGED_JS = {"92-focus.js", "70-mapart.js"}
+
+# 本次有意把「算法选择」从主区移动到左侧栏；旧版没有左侧栏这一块，
+# 所以对比 DOM / body 结构时把两边对应的算法区都摘掉。
+ALGO_OLD_RE = re.compile(
+    r'<div class="section">\s*<label class="s-label">4\. 算法选择</label>.*?'
+    r'(?=<div class="section">\s*<label class="s-label">5\. 尺寸设置</label>)',
+    re.S)
+ALGO_NEW_RE = re.compile(
+    r'<!--\s*=+\s*算法与抖动.*?-->.*?<!--\s*/算法与抖动\s*-->',
+    re.S)
 
 PASS, FAIL = [], []
 
@@ -235,6 +246,8 @@ def static_checks(splitter):
 
     body_orig = "\n".join(lines[splitter.BODY[0] - 1:splitter.BODY[1]])
     html = io.open(os.path.join(WEB, "index.html"), encoding="utf-8").read()
+    body_orig = ALGO_OLD_RE.sub("", body_orig)
+    html = ALGO_NEW_RE.sub("", html)
     bo = [t for t in re.split(r"(\s+)", body_orig) if t.strip()]
     bn = [t for t in re.split(r"(\s+)", html) if t.strip()]
     check("body 结构保留了原有全部标签（%d -> %d 个片段）" % (len(bo), len(bn)),
@@ -410,6 +423,9 @@ def strip_div_by_id(dom, elem_id):
 def normalize_dom(dom, strip_palette_list=True):
     if strip_palette_list:
         dom = strip_div_by_id(dom, "pal-list")
+    # 算法选择从主区搬到左侧栏是本次有意改动，比对旧/新版 DOM 时两边都摘掉。
+    dom = ALGO_OLD_RE.sub("", dom)
+    dom = ALGO_NEW_RE.sub("", dom)
     # 「局部噪点修正」「配色调参」都是拆分之后有意新增的功能，旧版当然没有；
     # 比对旧/新版一致性的目的在别处，这里把新增的部分摘掉再比。
     # 注意顺序：必须在删注释**之前**摘，否则两个标记注释先被删掉就找不到了。

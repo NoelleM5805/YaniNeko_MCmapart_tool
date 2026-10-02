@@ -80,7 +80,7 @@
 | `tasks` | `IMAGE_CACHE`（`MAX_IMAGE_CACHE=12`，LRU）、`add_log()` / `create_task()` / `finish_task()`，任务只留最近 `KEEP_TASKS=15` 个 |
 | `webapp` | `app` 与全部路由；`/` 读 `web/index.html`，`/static/{path}` 只服务 `web/` 下的文件（拼出来的绝对路径必须仍在 `web/` 内，挡 `../` 越界） |
 | `runtime` | `_NullWriter`、`stdout_is_tty()`、`_setup_console()`、`_install_excepthook()`、`safe_pause()` |
-| `__main__` | `main()`：打启动横幅 → 自检 `web/index.html` → 试绑端口（失败弹 MessageBox）→ 起 uvicorn 线程 + 保活看门狗 → 开浏览器 → 主循环 |
+| `__main__` | `main()`：打启动横幅 → 自检 `web/index.html` → 从默认端口开始自动找空闲端口 → 起 uvicorn 线程 + 保活看门狗 → 开浏览器 → 主循环 |
 
 ---
 
@@ -173,6 +173,48 @@
 半径越大反而改得越少（邻域里它自己更多）。这一点一开始就搞反了，
 是测试用错期望值暴露出来的。
 
+### 画笔：实时 + 像素画逻辑
+
+**为什么要分两层画布。** 画上去的像素盖在 `<img>` 上、选区轮廓再盖在像素上：
+
+```
+img                服务端渲染的权威结果（含所有已执行操作）
+└─ canvas.rp-paint 本地刚画上去的像素（pointer-events:none, image-rendering:pixelated）
+   └─ canvas.rp-canvas  选区轮廓 / 笔头提示（可整层隐藏）
+```
+
+`.rp-paint` 和图片、选区三者**位置完全一致**（同一套 `offsetLeft/Width`
+和同一个 CSS transform），所以缩放平移时一起动。
+
+**实时**：`rpPaintAt()` 直接改 `RP.pc.pixels` 调色板索引，`rpMarkDirty()` 只重绘脏矩形，
+落笔即见，整笔期间不发任何请求。松开鼠标只把笔迹暂存到 `RP.pendingStrokes`，
+点「应用画笔修改」后才入栈并请求一次服务端渲染，拿到权威结果和用量统计。
+
+**像素画逻辑**（对应「不要笔触」）：
+
+| 上一版 | 现在 |
+| --- | --- |
+| 沿轨迹盖一堆**圆形**笔头 | 落点吸附格子，盖 **N×N 硬边方块** |
+| 按归一化距离插值，点数不定 | **Bresenham 整数直线**，精确落在格子上 |
+| 已画的画笔在覆盖层上画虚线圆圈 | 不画任何轮廓（像素本身就是结果） |
+| 松开鼠标暂存，点按钮才请求服务端 | 本地即时上色 + 应用按钮提交 |
+
+两端用的是**同一套换算**，所以预览和成品画出来的是同一块地方：
+
+```
+前端：sw = Math.round(rx * 预览宽)
+后端：sw = int(rx * W + 0.5)     # 用 +0.5 取整对齐 JS 的 Math.round
+```
+
+（Python 的 `round()` 是银行家舍入，`round(2.5)=2`，和 JS 对不上，所以
+服务端显式写成 `int(v + 0.5)`。）落点用**格心**归一化（`(bx+0.5)/W`），
+服务端 `int(x*W)` 正好还原成同一个格子。
+
+`sw = 1` 时一个落点恰好改 1 个方块 —— 这就是「像素画笔」。
+测试里断言了 1/3/5 格分别改 1/9/25 个方块（圆形会是 1/9/21），
+以及横竖斜方向跨 10 格都恰好是 11 个方块（不断线）。
+
+
 ### 操作序列 vs 直接改图
 
 服务端每次都从抖动结果 `idx` 出发，按顺序重放前端传来的操作序列：
@@ -181,11 +223,14 @@
 {"kind":"denoise","target":"#605D77","strength":5,"lasso":[[x,y],...]}
 {"kind":"fill","hex":"#848484","lasso":[...]}
 {"kind":"revert","lasso":[...]}
-{"kind":"brush","hex":"#848484","radius":0.02,"points":[[x,y],...]}
+{"kind":"brush","hex":"#848484","rx":0.047,"ry":0.047,"points":[[x,y],...]}
 ```
 
 好处：预览和生成必然一致；撤回就是「去掉最后一个操作」；改了调色板或抖动算法之后
 操作序列照样对得上。代价是每次预览都要重放，但有了 C++ 核心这本来是毫秒级的。
+
+画笔也是走这套 —— 本地即时上色只是**预览**，权威结果仍然来自「抖动 + 重放操作」，
+所以 `Generate` 出来的东西和你屏幕上看到的是一致的。
 
 ### 交互上的几个决定
 
@@ -240,7 +285,7 @@
 - 上限 20 条，超出 `shift()` 掉最旧的：那份状态回不去，但**当前结果不受影响**
   （操作本身仍然作用在图上，只是不能再退到那一步）
 - 撤回之后做新动作会截断重做分支
-- 记录点只在**离散动作**上：执行/画笔松开/取消选区、方块选择变化（`palCommit`）、
+- 记录点只在**离散动作**上：执行/应用画笔/取消选区、方块选择变化（`palCommit`）、
   滑杆 `change`（不是 `input`）、表单 `change`。拖动滑杆不会刷出一堆空步骤
 - 快照内容一样就不重复记（`undoSignature` 比对）
 
@@ -308,7 +353,6 @@
 | `RuntimeError: lost sys.stdin` | `pythonw` / `--windowed` 下没有 stdin，而代码只捕获了 `EOFError` | `safe_pause()`：检查 `sys.stdin is None` / `closed` / `isatty()`，并捕获 `EOFError`/`KeyboardInterrupt`/`RuntimeError`/`OSError`/`ValueError` |
 | `ValueError: Unable to configure formatter 'default'` | uvicorn 里 `sys.stdout.isatty()` 在无控制台时是 `None` | `_NullWriter` 顶上 + 显式传 `use_colors=stdout_is_tty()` |
 | `UnicodeEncodeError: 'gbk' codec can't encode '\u2713'` | `✓ ✗ ⚠` 不在 GBK 里 | 控制台输出改用 `√ × !`，并 `reconfigure(errors="replace")` |
-| `换端口启动.bat` 不生效 | 写成 UTF-8 时 cmd 按 GBK 读，尾字节把换行吃掉了 | **必须存成 GBK（代码页 936）** |
 
 ---
 

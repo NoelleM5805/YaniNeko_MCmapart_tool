@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import socket
 import sys
 import threading
 
@@ -28,6 +29,28 @@ def _env_port(default=8765):
 
 
 PORT = _env_port()
+# 端口被占用时自动向后尝试的最大数量
+PORT_SCAN_LIMIT = 64
+
+
+def find_available_port(start=None, host=HOST, limit=PORT_SCAN_LIMIT):
+    """
+    从 start 开始向后找第一个可绑定的端口。
+    找不到返回 None。仅用于启动前探测，绑定后 socket 会立即关闭。
+    """
+    if start is None:
+        start = PORT
+    end = min(65535, int(start) + max(1, int(limit)) - 1)
+    for port in range(int(start), end + 1):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((host, port))
+            return port
+        except OSError:
+            continue
+    return None
+
+
 TASKS = {}
 TASK_LOCK = threading.Lock()
 KEEP_TASKS = 15

@@ -68,7 +68,8 @@ PROBE_BODY = r"""
   has("undoBtnDisabled", function () { return el("rp-undo") ? el("rp-undo").disabled : "missing"; });
   has("chipsAfterPalette", function () {
     return document.querySelectorAll("#rp-pal .rp-chip").length; });
-  has("canvasExists", function () { return !!document.querySelector(".rp-canvas"); });
+  has("canvasExists", function () {
+    return !!document.querySelector("#mp-preview-pal canvas.rp-canvas:not(.rp-paint)"); });
   has("status", function () { return el("status").textContent; });
   has("undoState", function () { return el("undo-state").textContent; });
 

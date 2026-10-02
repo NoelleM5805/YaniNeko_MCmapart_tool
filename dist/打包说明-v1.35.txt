@@ -5,7 +5,6 @@
     YaniNeko_MCmapart_tool/                     发行版目录（直接拷给别人就行）
         YaniNeko_MCmapart_tool.exe              34.2 MB，单文件程序
         使用说明.txt
-        换端口启动.bat                          GBK 编码，默认端口占用时用它换 8899
 
     YaniNeko_MCmapart_tool_v1.35_new.zip        上面那个目录打的压缩包（33.9 MB）
     YaniNeko_MCmapart_tool_v1.35.zip            旧的，忽略它（见下）

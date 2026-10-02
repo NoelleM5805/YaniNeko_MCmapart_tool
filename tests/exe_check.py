@@ -10,7 +10,7 @@
   · 打进去的前端资源（含噪点修正 / 撤回脚本）能不能取到
   · 版本号、是否 frozen、C++ 抖动核心在包里有没有生效
   · /static/ 的越界读取有没有挡住
-  · 打包出来的 换端口启动.bat 能不能真的换端口
+  · 发行版不依赖换端口批文件，程序会自动检测并切换端口
 
 用法（在工作区根目录执行）：
     python tests/exe_check.py
@@ -130,17 +130,6 @@ def main():
         st, _raw = R.req("http://127.0.0.1:%d/static/../run_maptool.py" % EXE_PORT)
         check("exe /static 挡越界读取", st == 404, "状态 %d" % st)
 
-        # 发行版里的 换端口启动.bat：内容要是 GBK，且指向真正存在的 exe
-        bat = os.path.join(EXE_DIR, "换端口启动.bat")
-        if os.path.isfile(bat):
-            with open(bat, "rb") as f:
-                txt = f.read().decode("gbk")          # 解不出来就说明编码错了
-            check("换端口启动.bat 是 GBK 且写好了端口",
-                  "MAPART_PORT=8899" in txt and "8899" in txt)
-            check("换端口启动.bat 指向存在的 exe",
-                  ('"%~dp0' + os.path.basename(EXE) + '"') in txt)
-        else:
-            check("发行版里有 换端口启动.bat", False, bat)
         check("发行版里有 使用说明.txt",
               os.path.isfile(os.path.join(EXE_DIR, "使用说明.txt")))
 

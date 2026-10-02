@@ -7,7 +7,6 @@
 
     dist/YaniNeko_MCmapart_tool/YaniNeko_MCmapart_tool.exe
     dist/YaniNeko_MCmapart_tool/使用说明.txt
-    dist/YaniNeko_MCmapart_tool/换端口启动.bat
     dist/YaniNeko_MCmapart_tool_v<版本>.zip      （整个文件夹打成一个 zip，方便直接发）
 
 打包进去的资源（运行时由 maptool.config 定位到 _MEIPASS）：
@@ -225,17 +224,6 @@ def run_pyinstaller():
     return exe
 
 
-def read_bat(path):
-    """换端口启动.bat 必须是 GBK —— cmd 按代码页读，UTF-8 的中文会把换行吃掉。"""
-    with open(path, "rb") as f:
-        return f.read().decode("gbk")
-
-
-def write_bat(path, text):
-    with open(path, "wb") as f:
-        f.write(text.encode("gbk"))
-
-
 def make_zip(out_dir, ver, tries=4, wait=0.5):
     """
     把发行版目录打成一个 zip。
@@ -303,12 +291,6 @@ def assemble(exe, ver, want_zip=True):
     else:
         print("  ! packaging/使用说明.txt 不存在，发行版里就没有它")
 
-    bat_src = os.path.join(PACKAGING, "换端口启动.bat")
-    if os.path.isfile(bat_src):
-        text = read_bat(bat_src).replace("Pictomapart", APP_NAME)
-        write_bat(os.path.join(out, "换端口启动.bat"), text)
-    else:
-        print("  ! packaging/换端口启动.bat 不存在，发行版里就没有它")
 
     zp = make_zip(out, ver) if want_zip else None
     return out, zp

@@ -160,24 +160,80 @@ def _polygon_mask(points, H, W):
     return np.asarray(img, dtype=bool)
 
 
+def _line_blocks(x0, y0, x1, y1):
+    """
+    两个方块之间的整数直线（Bresenham）。
+
+    快速拖动时相邻两个鼠标位置可能隔好几个方块，直接逐个落点会画成虚线，
+    所以中间要补上。这是像素画软件画线的标准做法，不是「笔触」——
+    补出来的每个点都精确落在方块格子上。
+    """
+    dx = abs(x1 - x0)
+    dy = -abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx + dy
+    while True:
+        yield x0, y0
+        if x0 == x1 and y0 == y1:
+            return
+        e2 = 2 * err
+        if e2 >= dy:
+            err += dy
+            x0 += sx
+        if e2 <= dx:
+            err += dx
+            y0 += sy
+
+
 def _brush_mask(points, rx, ry, H, W):
     """
-    圆形笔刷轨迹 -> 布尔掩膜。
+    画笔轨迹 -> 布尔掩膜（**像素画逻辑**）。
 
-    半径给了两个分量（各自按对应轴归一化）：rx 相对图像宽度、ry 相对高度。
+    和上一版「沿轨迹盖一堆圆形笔头」不同，这里是：
+      · 落点吸附到方块格子（`int(x*W)`），不做抗锯齿
+      · 笔头是 N×N 的**方块**，以落点为中心，边缘是硬的
+      · 相邻落点之间用 Bresenham 补线，快速拖动也不会断成虚线
+
+    尺寸按两个分量给（各自按对应轴归一化）：rx 相对宽度、ry 相对高度。
     成品上一个方块是正方形，而预览可能和成品不同尺寸、甚至被 stretch 拉过，
-    所以两个方向必须分开换算 —— 否则非正方形图片上笔刷会变成椭圆。
+    所以两个方向必须分开换算。
     """
-    img = Image.new("1", (W, H), 0)
-    if not points:
-        return np.asarray(img, dtype=bool)
-    d = ImageDraw.Draw(img)
-    px = max(0.5, rx * W)
-    py = max(0.5, ry * H)
+    m = np.zeros((H, W), dtype=bool)
+    if not points or H <= 0 or W <= 0:
+        return m
+
+    # 和前端保持一致：+0.5 再取整（JS 的 Math.round 是四舍五入，
+    # Python 的 round 是银行家舍入，直接用 int(x+0.5) 对齐）
+    sw = max(1, int(rx * W + 0.5))
+    sh = max(1, int(ry * H + 0.5))
+    ox = (sw - 1) // 2          # 让方块以落点为中心
+    oy = (sh - 1) // 2
+
+    pts = []
     for x, y in points:
-        cx, cy = x * W, y * H
-        d.ellipse([cx - px, cy - py, cx + px, cy + py], fill=1)
-    return np.asarray(img, dtype=bool)
+        bx = int(x * W)
+        by = int(y * H)
+        bx = 0 if bx < 0 else (W - 1 if bx >= W else bx)
+        by = 0 if by < 0 else (H - 1 if by >= H else by)
+        if not pts or pts[-1] != (bx, by):
+            pts.append((bx, by))
+
+    centers = []
+    if len(pts) == 1:
+        centers = pts
+    else:
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            centers.extend(_line_blocks(x0, y0, x1, y1))
+
+    for bx, by in centers:
+        x0 = bx - ox
+        y0 = by - oy
+        xa, xb = max(0, x0), min(W, x0 + sw)
+        ya, yb = max(0, y0), min(H, y0 + sh)
+        if xa < xb and ya < yb:
+            m[ya:yb, xa:xb] = True
+    return m
 
 
 # ---------------------------------------------------------------- 邻域统计

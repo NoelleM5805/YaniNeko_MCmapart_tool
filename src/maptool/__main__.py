@@ -9,7 +9,7 @@ import uvicorn
 import webbrowser
 
 from . import __version__
-from .config import HOST, PORT, get_base_dir, web_index_path
+from .config import HOST, PORT, find_available_port, get_base_dir, web_index_path
 from .keepalive import _keepalive_watchdog
 from .runtime import safe_pause, stdout_is_tty
 from .webapp import app
@@ -25,7 +25,7 @@ def main():
     idx = web_index_path()
     print(f"web/index.html: {'√ 存在' if idx else '× 缺失'}"
           + (f"  ({idx})" if idx else ""))
-    print(f"监听地址 : http://{HOST}:{PORT}")
+    print(f"默认端口 : {PORT}")
     print("=" * 60)
 
     if not idx:
@@ -43,20 +43,12 @@ def main():
         safe_pause()
         sys.exit(1)
 
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((HOST, PORT))
-    except OSError as e:
-        msg = (f"端口 {PORT} 无法绑定：{e}\n\n"
-               f"可能有一个旧的进程还占着这个端口。\n\n"
-               f"解决方法：\n"
-               f"  1. 命令行执行：\n"
-               f"     netstat -ano | findstr :{PORT}\n"
-               f"     找到 PID 后：taskkill /PID <PID> /F\n"
-               f"  2. 或者换个端口启动（不影响已有实例）：\n"
-               f"     set MAPART_PORT=8899\n"
-               f"     然后再运行本程序")
+    # 自动检测端口：默认端口被占用时，从 PORT 开始向后找第一个空闲端口。
+    port = find_available_port(PORT, HOST)
+    if port is None:
+        msg = (f"从 {PORT} 开始的 {64} 个端口都无法绑定。\n\n"
+               f"可能已经有太多实例在运行，或者当前环境限制了本地监听。\n"
+               f"请关闭一些旧进程后重试。")
         print("[错误] " + msg)
         try:
             if sys.platform.startswith("win"):
@@ -66,15 +58,17 @@ def main():
             pass
         safe_pause()
         sys.exit(2)
+    if port != PORT:
+        print(f"! 端口 {PORT} 被占用，已自动切换为 {port}")
 
-    url = f"http://{HOST}:{PORT}"
+    url = f"http://{HOST}:{port}"
     server_error = {"msg": None}
 
     def run_server():
         try:
             # use_colors 一定要显式给布尔值：留空时 uvicorn 会去调
             # sys.stdout.isatty() 来判断，而无控制台环境下那是 None。
-            kwargs = dict(host=HOST, port=PORT, log_level="warning")
+            kwargs = dict(host=HOST, port=port, log_level="warning")
             try:
                 import inspect as _inspect
                 if "use_colors" in _inspect.signature(uvicorn.run).parameters:
@@ -97,7 +91,7 @@ def main():
         if server_error["msg"]:
             break
         try:
-            with socket.create_connection((HOST, PORT), timeout=0.3):
+            with socket.create_connection((HOST, port), timeout=0.3):
                 ready = True
                 break
         except OSError:

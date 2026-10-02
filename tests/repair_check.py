@@ -225,6 +225,51 @@ def main():
               {"kind": "brush", "hex": bh, "rx": 0.05,
                "points": [[0.5, 0.5]]}]}})["ops"][0]["ry"] == 0.05)
 
+    # ---------------- 画笔：像素画语义 ----------------
+    # 一次落点 = 一个**硬边方块**，尺寸精确是 N×N，不画圆形笔头、不抗锯齿。
+    print("\n画笔（像素画语义）：")
+
+    def brush_at(pts, size_blocks):
+        r = parse_repair({"repair": {"ops": [
+            {"kind": "brush", "hex": bh,
+             "rx": size_blocks / float(W), "ry": size_blocks / float(H),
+             "points": pts}]}})
+        _idx, inf = apply_repair(idx0, work, pal, r, algo)
+        return inf["brush_pixels"]
+
+    check("笔头 1 格：一个落点只改 1 个方块", brush_at([[0.5, 0.5]], 1) == 1)
+    check("笔头 3 格：一个落点改 3×3 = 9 个方块", brush_at([[0.5, 0.5]], 3) == 9)
+    check("笔头 5 格：一个落点改 5×5 = 25 个方块", brush_at([[0.5, 0.5]], 5) == 25)
+    check("笔头是方的不是圆的（5 格 = 25，圆形只有 21）",
+          brush_at([[0.5, 0.5]], 5) == 25)
+
+    # 相邻落点之间补整数直线：横着跨 10 格应该是 11 个方块，且中间不断
+    n_line = brush_at([[0.5, 0.5], [0.5 + 10.0 / W, 0.5]], 1)
+    check("快速拖动不断线（跨 10 格 -> %d 个方块，整数直线应为 11）" % n_line,
+          n_line == 11)
+    # 竖直方向同理
+    check("竖直方向也连得上（%d）" % brush_at([[0.5, 0.5], [0.5, 0.5 + 10.0 / H]], 1),
+          brush_at([[0.5, 0.5], [0.5, 0.5 + 10.0 / H]], 1) == 11)
+    # 斜线
+    n_diag = brush_at([[0.2, 0.2], [0.2 + 10.0 / W, 0.2 + 10.0 / H]], 1)
+    check("斜着拖动也连得上（%d）" % n_diag, n_diag == 11)
+
+    # 硬边：落点吸附到格子，不会因为小数位置糊出半个方块
+    a = parse_repair({"repair": {"ops": [
+        {"kind": "brush", "hex": bh, "rx": 1.0 / W, "ry": 1.0 / H,
+         "points": [[0.2001, 0.3001]]}]}})
+    b = parse_repair({"repair": {"ops": [
+        {"kind": "brush", "hex": bh, "rx": 1.0 / W, "ry": 1.0 / H,
+         "points": [[0.2099, 0.3099]]}]}})
+    ia = apply_repair(idx0, work, pal, a, algo)[1]
+    ib = apply_repair(idx0, work, pal, b, algo)[1]
+    check("格子内的微小抖动落在同一格（不产生半格）",
+          ia["brush_pixels"] == 1 and ib["brush_pixels"] == 1)
+
+    # 同一笔里重复落点不会重复计数（去重）
+    check("同一格重复落点只算一次",
+          brush_at([[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]], 1) == 1)
+
     # ---------------- 操作顺序 ----------------
     print("\n操作序列：")
     rep_ab = parse_repair({"repair": {"ops": [

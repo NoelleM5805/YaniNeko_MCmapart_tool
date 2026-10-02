@@ -252,6 +252,7 @@ async def api_mapart_preview(payload: dict):
     selected = payload.get("blocks")
     adj = parse_adjust(payload)
     alloc = parse_alloc(payload)
+    preview_full = bool(payload.get("preview_full"))
 
     pal, used = make_palette(selected)
     if pal.n == 0:
@@ -284,20 +285,25 @@ async def api_mapart_preview(payload: dict):
         # 图片调整在成品尺寸上做（暗角要贴合画幅），预览与生成一致
         work = apply_image_adjust(work, adj)
 
-        side = PREVIEW_MAX_SIDE
-        try:
-            side = int(payload.get("preview_side", PREVIEW_MAX_SIDE))
-        except (TypeError, ValueError):
-            pass
-        side = max(128, min(PREVIEW_MAX_SIDE, side))
-
-        if max(real_w, real_h) > side:
-            scale = side / max(real_w, real_h)
-            pw = max(1, int(round(real_w * scale)))
-            ph = max(1, int(round(real_h * scale)))
-            work = work.resize((pw, ph), Image.LANCZOS)
-        else:
+        # preview_full=True：预览也用成品 1:1 像素，不再缩小，避免方块被插值糊掉。
+        # 旧调用不传这个字段时保留原来的降采样行为（兼容回归测试）。
+        if preview_full:
             pw, ph = real_w, real_h
+        else:
+            side = PREVIEW_MAX_SIDE
+            try:
+                side = int(payload.get("preview_side", PREVIEW_MAX_SIDE))
+            except (TypeError, ValueError):
+                pass
+            side = max(128, min(PREVIEW_MAX_SIDE, side))
+
+            if max(real_w, real_h) > side:
+                scale = side / max(real_w, real_h)
+                pw = max(1, int(round(real_w * scale)))
+                ph = max(1, int(round(real_h * scale)))
+                work = work.resize((pw, ph), Image.LANCZOS)
+            else:
+                pw, ph = real_w, real_h
 
         st = max(0.0, min(1.0, strength / 100.0))
         idx, rgb = process_image(work, algo, dither, st, pal)
@@ -313,6 +319,16 @@ async def api_mapart_preview(payload: dict):
             rep_info = public_info(rep)
             if not rep["applied"] and not rep["warnings"]:
                 rep_info["note"] = "这一步没有改动任何方块"
+
+        # 专业像素画数据：发调色板索引而不是只发 PNG，前端按索引查色块。
+        # 调色板数量很小，用 u8 即可；保留 u16 分支以防调色板扩展。
+        if pal.n <= 255:
+            pix_arr = idx.astype(np.uint8)
+            pix_encoding = "u8"
+        else:
+            pix_arr = idx.astype("<u2")
+            pix_encoding = "u16le"
+        pixels_b64 = base64.b64encode(pix_arr.tobytes(order="C")).decode()
 
         prev_img = Image.fromarray(rgb, mode="RGB")
 
@@ -337,6 +353,14 @@ async def api_mapart_preview(payload: dict):
             "height": real_h,
             "preview_width": pw,
             "preview_height": ph,
+            "preview_full": preview_full,
+            "pixels_b64": pixels_b64,
+            "pixels_encoding": pix_encoding,
+            "pixels_width": int(idx.shape[1]),
+            "pixels_height": int(idx.shape[0]),
+            "palette": list(pal.hexes[:pal.n]),
+            "dither_mode": dither,
+            "dither_strength": st,
             "blocks": real_w * real_h,
             "groups": pal.n,
             "colors_used": [pal.hexes[int(i)] for i in np.unique(idx)],

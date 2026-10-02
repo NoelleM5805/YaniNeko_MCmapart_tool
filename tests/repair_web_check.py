@@ -63,8 +63,15 @@ PROBE = r"""
   const out = { errors: [] };
   function el(id) { return document.getElementById(id); }
   function rec(k, v) { out[k] = v; }
-  function cvs() { return document.querySelector("#mp-preview-pal .rp-canvas"); }
-  function pimg() { return document.querySelector("#mp-preview-pal img"); }
+  function cvs() {
+    // 现在有两张画布：.rp-paint（已画像素）和选区覆盖层。这里要的是覆盖层。
+    return document.querySelector("#mp-preview-pal canvas.rp-canvas:not(.rp-paint)");
+  }
+  function pimg() {
+    return document.querySelector("#mp-preview-pal img, #mp-preview-pal canvas#mp-preview-canvas");
+  }
+  function pw(el) { return (el && (el.naturalWidth || el.width)) || 0; }
+  function ph(el) { return (el && (el.naturalHeight || el.height)) || 0; }
 
   function mouse(target, type, cx, cy, extra) {
     const r = target.getBoundingClientRect();
@@ -97,12 +104,16 @@ PROBE = r"""
     }, 30000, "settle");
   }
 
-  function previewSrc() { const i = pimg(); return i ? i.src : ""; }
+  function previewSrc() {
+    const i = pimg();
+    if (!i) return "";
+    return i.tagName === "CANVAS" ? i.toDataURL("image/png") : i.src;
+  }
 
   function colorAt(nx, ny) {
     const img = pimg();
     const c = document.createElement("canvas");
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.width = pw(img); c.height = ph(img);
     const g = c.getContext("2d"); g.drawImage(img, 0, 0);
     const d = g.getImageData(Math.floor(nx * c.width), Math.floor(ny * c.height), 1, 1).data;
     return "#" + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, "0"))
@@ -114,7 +125,7 @@ PROBE = r"""
     const want = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16),
                   parseInt(hex.slice(5, 7), 16)];
     const c = document.createElement("canvas");
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    c.width = pw(img); c.height = ph(img);
     const g = c.getContext("2d"); g.drawImage(img, 0, 0);
     const d = g.getImageData(0, 0, c.width, c.height).data;
     let n = 0;
@@ -124,8 +135,28 @@ PROBE = r"""
     return n;
   }
 
-  function makeImage() {
-    const c = document.createElement("canvas");
+  /** 统计相对 baseline 被本地画笔改过的像素索引（不再有临时绘制层）。 */
+  function paintStat() {
+    const pc = RP.pc, base = RP._paintBaseline;
+    if (!pc || !base || !pc.pixels) return { n: 0, w: 0, h: 0 };
+    let n = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let y = 0; y < pc.height; y++) {
+      for (let x = 0; x < pc.width; x++) {
+        const i = y * pc.width + x;
+        if (pc.pixels[i] !== base[i]) {
+          n++;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (n === 0) return { n: 0, w: 0, h: 0 };
+    return { n: n, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  }
+
+  function makeImage() {    const c = document.createElement("canvas");
     c.width = 200; c.height = 150;
     const g = c.getContext("2d");
     g.fillStyle = "#767a7e"; g.fillRect(0, 0, 200, 150);
@@ -168,7 +199,7 @@ PROBE = r"""
       el("mp-dither").value = "floyd";
       el("mp-dither").dispatchEvent(new Event("change", { bubbles: true }));
       await upload();
-      await waitFor(() => pimg() && pimg().naturalWidth > 0, 30000, "首张预览");
+      await waitFor(() => pimg() && pw(pimg()) > 0, 30000, "首张预览");
       await settle();
       rec("hiddenAfterUpload", el("rp-sec").hidden);
       rec("noCanvasAfterUpload", !cvs());
@@ -198,41 +229,38 @@ PROBE = r"""
       rec("chips", document.querySelectorAll("#rp-pal .rp-chip").length);
       rec("execDisabledNoTarget", el("rp-exec").disabled);
 
-      // ================= B2. 配色调参镜像（专注模式下用） =================
+      // ================= B2. 算法 / 抖动已固定到左侧栏 =================
       rec("fxVisible", el("fx-sec") && !el("fx-sec").hidden);
-      rec("fxAlgoOptions", el("fx-algo").options.length);
-      rec("fxDitherOptions", el("fx-dither").options.length);
-      rec("fxAlgoInit", el("fx-algo").value);
-      rec("mpAlgoInit", el("mp-algo").value);
+      rec("algoOptions", el("mp-algo").options.length);
+      rec("ditherOptions", el("mp-dither").options.length);
+      rec("algoInit", el("mp-algo").value);
+      rec("ditherInit", el("mp-dither").value);
 
-      // 改左边栏 -> 主区跟着变
-      el("fx-algo").value = "cie94";
-      el("fx-algo").dispatchEvent(new Event("change", { bubbles: true }));
+      // 左侧栏现在就是唯一控件，直接改它。
+      el("mp-algo").value = "cie94";
+      el("mp-algo").dispatchEvent(new Event("change", { bubbles: true }));
       await new Promise(r => setTimeout(r, 150));
-      rec("mpAlgoAfterFx", el("mp-algo").value);
+      rec("algoChanged", el("mp-algo").value);
 
-      // 改主区 -> 左边栏跟着变
       el("mp-dither").value = "atkinson";
       el("mp-dither").dispatchEvent(new Event("change", { bubbles: true }));
       await new Promise(r => setTimeout(r, 150));
-      rec("fxDitherAfterMp", el("fx-dither").value);
+      rec("ditherChanged", el("mp-dither").value);
 
-      // 抖动比例
-      el("fx-strength").value = "60";
-      el("fx-strength").dispatchEvent(new Event("input", { bubbles: true }));
+      el("mp-strength").value = "60";
+      el("mp-strength").dispatchEvent(new Event("input", { bubbles: true }));
       await new Promise(r => setTimeout(r, 150));
-      rec("mpStrengthAfterFx", el("mp-strength").value);
-      rec("fxStrengthLabel", el("fx-strength-v").textContent);
-      rec("mpStrengthLabel", el("mp-strength-val").textContent);
+      rec("strengthChanged", el("mp-strength").value);
+      rec("strengthLabel", el("mp-strength-val").textContent);
 
       // 还原，别影响后面的用例
-      el("fx-algo").value = "weighted";
-      el("fx-algo").dispatchEvent(new Event("change", { bubbles: true }));
+      el("mp-algo").value = "weighted";
+      el("mp-algo").dispatchEvent(new Event("change", { bubbles: true }));
       el("mp-dither").value = "floyd";
       el("mp-dither").dispatchEvent(new Event("change", { bubbles: true }));
-      el("fx-strength").value = "100";
-      el("fx-strength").dispatchEvent(new Event("input", { bubbles: true }));
-      el("fx-strength").dispatchEvent(new Event("change", { bubbles: true }));
+      el("mp-strength").value = "100";
+      el("mp-strength").dispatchEvent(new Event("input", { bubbles: true }));
+      el("mp-strength").dispatchEvent(new Event("change", { bubbles: true }));
       await new Promise(r => setTimeout(r, 600));
       await settle();
 
@@ -267,7 +295,7 @@ PROBE = r"""
         // 用预览像素统计：选一个数量中等、在渐变区里成群出现的颜色
         const img = pimg();
         const c = document.createElement("canvas");
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.width = pw(img); c.height = ph(img);
         const g = c.getContext("2d"); g.drawImage(img, 0, 0);
         const d = g.getImageData(0, 0, c.width, c.height).data;
         const m = new Map();
@@ -351,13 +379,31 @@ PROBE = r"""
       rec("brushSize", RP.brushSize);
       rec("brushRadii", rpBrushRadii());
 
+      // —— 实时性：落笔之后、松开之前，本地就应该已经画上去了 ——
       const srcBeforeBrush = previewSrc();
+      RP._paintBaseline = RP.pc.pixels.slice();
       const cb2 = RP.canvas;
       const rb2 = cb2.getBoundingClientRect();
       mouse(cb2, "mousedown", rb2.width * spot[0], rb2.height * spot[1]);
-      mouse(cb2, "mousemove", rb2.width * spot[0] + 5, rb2.height * spot[1] + 5);
+      await new Promise(r => setTimeout(r, 80));
+      rec("inkOnMouseDown", paintStat().n);
+      rec("opsDuringDrag", RP.ops.length);
+      rec("imgUnchangedDuringDrag", previewSrc() === srcBeforeBrush);
+      mouse(cb2, "mousemove", rb2.width * spot[0] + 6, rb2.height * spot[1] + 6);
+      await new Promise(r => setTimeout(r, 80));
+      rec("inkAfterMove", paintStat().n);
+      rec("inkGrewWhileDragging", paintStat().n > 0);
+      // 松开前服务端一次都没被叫过（这就是「实时」）
+      rec("imgStillUnchanged", previewSrc() === srcBeforeBrush);
+
       window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
       await new Promise(r => setTimeout(r, 150));
+      rec("pendingBrushStrokes", RP.pendingStrokes.length);
+      rec("opsAfterMouseUp", RP.ops.length);
+      rec("applyDisabledBeforeClick", el("rp-apply-brush").disabled);
+      click("rp-apply-brush");
+      await new Promise(r => setTimeout(r, 100));
+      rec("pendingAfterApply", RP.pendingStrokes.length);
       rec("opsAfterBrush", RP.ops.length);
       rec("lastOpKind", (RP.ops[RP.ops.length - 1] || {}).kind);
       rec("lastOpPts", ((RP.ops[RP.ops.length - 1] || {}).points || []).length);
@@ -378,6 +424,49 @@ PROBE = r"""
       rec("brushSpotAfter", colorAt(spot[0], spot[1]));
       rec("opsAfterBrush", RP.ops.length);
       rec("countAfterBrush", countColor(tgt));
+      rec("inkAfterServerRender", paintStat().n);
+
+      // —— 像素画：笔头 1 格 + 单击一下 = 正好一个方块，硬边 ——
+      el("rp-size").value = "1";
+      el("rp-size").dispatchEvent(new Event("input", { bubbles: true }));
+      RP._paintBaseline = RP.pc.pixels.slice();
+      const pencilAt = [0.42, 0.42];
+      rec("pencilSpotBefore", colorAt(pencilAt[0], pencilAt[1]));
+      const cb3 = RP.canvas;
+      const rb3 = cb3.getBoundingClientRect();
+      mouse(cb3, "mousedown", rb3.width * pencilAt[0], rb3.height * pencilAt[1]);
+      await new Promise(r => setTimeout(r, 60));
+      const st1 = paintStat();
+      rec("pencilInk", st1.n);
+      rec("pencilW", st1.w);
+      rec("pencilH", st1.h);
+      window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      await new Promise(r => setTimeout(r, 80));
+      click("rp-apply-brush");
+      await new Promise(r => setTimeout(r, 700));
+      rec("opsAfterPencil", RP.ops.length);
+      rec("pencilSpotAfter", colorAt(pencilAt[0], pencilAt[1]));
+
+      // —— 画笔不画笔触轮廓 ——
+      // 直接构造一份「只有画笔操作」的文档再重绘，覆盖层上应该什么都不画。
+      // （不能靠数蓝色像素：已执行的降噪套索本来就是蓝的。）
+      (function () {
+        const keep = RP.ops;
+        RP.ops = keep.filter(o => o.kind === "brush");
+        const keepHover = RP.hover;
+        RP.hover = null;
+        rpRedraw();
+        const cvv = cvs();
+        const g = cvv.getContext("2d");
+        const d = g.getImageData(0, 0, cvv.width, cvv.height).data;
+        let n = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 8) n++;
+        rec("brushOnlyOverlayInk", n);
+        RP.ops = keep;
+        RP.hover = keepHover;
+        rpRedraw();
+      })();
+      rec("opsBeforeOverlayTest", RP.ops.length);
       document.querySelector('.rp-tab[data-rptool="lasso"]').click();
       await new Promise(r => setTimeout(r, 60));
 
@@ -491,6 +580,7 @@ PROBE = r"""
       rec("opsAfterUndo", RP.ops.length);
       rec("countBeforeUndo", countBeforeUndo);
       rec("countAfterUndo", countColor(tgt));
+      rec("pencilSpotAfterUndo", colorAt(pencilAt[0], pencilAt[1]));
       rec("undoBtnDisabledNow", el("rp-undo").disabled);
 
       const srcUndone = previewSrc();
@@ -500,6 +590,7 @@ PROBE = r"""
       await settle();
       rec("opsAfterRedo", RP.ops.length);
       rec("countAfterRedo", countColor(tgt));
+      rec("pencilSpotAfterRedo", colorAt(pencilAt[0], pencilAt[1]));
       rec("undoStateText", el("undo-state").textContent);
 
       // 一路撤回到底：操作清空，画面应该回到最初的抖动结果
@@ -673,21 +764,17 @@ def main():
         check("覆盖画布已挂上且与图片布局盒一致",
               g("canvasAttached") is True and g("canvasMatchesLayout") is True)
         check("色块列表已渲染（%s 个）" % g("chips"), (g("chips") or 0) > 10)
-        check("专注模式下左边栏出现「配色调参」", g("fxVisible") is True)
-        check("颜色识别 / 抖动算法的选项已从主区同步（%s / %s）"
-              % (g("fxAlgoOptions"), g("fxDitherOptions")),
-              num("fxAlgoOptions", 0) >= 6 and num("fxDitherOptions", 0) >= 10)
-        check("初始值就和主区一致（%s vs %s）" % (g("fxAlgoInit"), g("mpAlgoInit")),
-              g("fxAlgoInit") == g("mpAlgoInit"))
-        check("改左边栏的颜色识别会写回主区（%s）" % g("mpAlgoAfterFx"),
-              g("mpAlgoAfterFx") == "cie94")
-        check("改主区的抖动算法会同步到左边栏（%s）" % g("fxDitherAfterMp"),
-              g("fxDitherAfterMp") == "atkinson")
-        check("抖动比例双向同步（主区 %s / 左边栏 %s）"
-              % (g("mpStrengthAfterFx"), g("fxStrengthLabel")),
-              g("mpStrengthAfterFx") == "60" and g("fxStrengthLabel") == "60")
-        check("主区的数值标签也跟着变（%s）" % g("mpStrengthLabel"),
-              g("mpStrengthLabel") == "60")
+        check("左侧栏出现「算法与抖动」", g("fxVisible") is True)
+        check("颜色识别 / 抖动算法选项存在（%s / %s）"
+              % (g("algoOptions"), g("ditherOptions")),
+              num("algoOptions", 0) >= 6 and num("ditherOptions", 0) >= 10)
+        check("左侧栏颜色识别可直接修改（%s）" % g("algoChanged"),
+              g("algoChanged") == "cie94")
+        check("左侧栏抖动算法可直接修改（%s）" % g("ditherChanged"),
+              g("ditherChanged") == "atkinson")
+        check("左侧栏抖动比例可直接修改（%s / label %s）"
+              % (g("strengthChanged"), g("strengthLabel")),
+              g("strengthChanged") == "60" and g("strengthLabel") == "60")
 
         # ---- 右键拖动 / 左键留给工具 ----
         check("右键拖动可以平移预览图（dx=%s dy=%s）"
@@ -733,6 +820,43 @@ def main():
               % (g("brushSpotBefore"), g("brushSpotAfter"), g("brushHexPicked")),
               str(g("brushSpotAfter")).upper() == str(g("brushHexPicked")).upper()
               and str(g("brushSpotBefore")).upper() != str(g("brushHexPicked")).upper())
+
+        # ---- 实时：松开鼠标之前本地就已经画上去了，而且没打扰服务端 ----
+        check("落笔瞬间本地就画上去了（%s 个像素）" % g("inkOnMouseDown"),
+              num("inkOnMouseDown", 0) > 0)
+        check("拖动过程中本地像素在增加（%s -> %s）"
+              % (g("inkOnMouseDown"), g("inkAfterMove")),
+              num("inkAfterMove", 0) > num("inkOnMouseDown", 0))
+        check("拖动过程中还没入栈（%s 步）" % g("opsDuringDrag"),
+              num("opsDuringDrag", -1) == num("opsAfterExec", -2))
+        check("拖动时预览 canvas 本地重绘（%s / %s）"
+              % (g("imgUnchangedDuringDrag"), g("imgStillUnchanged")),
+              g("imgUnchangedDuringDrag") is False and g("imgStillUnchanged") is False)
+        check("松开鼠标只暂存笔迹，不自动入栈（pending=%s, ops=%s）"
+              % (g("pendingBrushStrokes"), g("opsAfterMouseUp")),
+              num("pendingBrushStrokes", 0) > 0
+              and num("opsAfterMouseUp", -1) == num("opsAfterExec", -2))
+        check("暂存后「应用画笔修改」按钮可用", g("applyDisabledBeforeClick") is False)
+        check("点应用后才提交并清空暂存（pending=%s, ops=%s）"
+              % (g("pendingAfterApply"), g("opsAfterBrush")),
+              num("pendingAfterApply", 0) == 0
+              and num("opsAfterBrush", -1) > num("opsAfterExec", -2))
+        check("松开后服务端结果仍保留画笔像素（%s）" % g("inkAfterServerRender"),
+              num("inkAfterServerRender", 0) > 0)
+
+        # ---- 像素画：笔头 1 格 = 一个方块，硬边 ----
+        check("笔头 1 格时单击只画 1 个方块（%s 像素，%s×%s）"
+              % (g("pencilInk"), g("pencilW"), g("pencilH")),
+              num("pencilInk", 0) == 1 and num("pencilW", 0) == 1
+              and num("pencilH", 0) == 1)
+        check("铅笔点一下确实落在图上（%s -> %s）"
+              % (g("pencilSpotBefore"), g("pencilSpotAfter")),
+              str(g("pencilSpotAfter")).upper() == str(g("brushHexPicked")).upper()
+              and str(g("pencilSpotBefore")).upper() != str(g("pencilSpotAfter")).upper())
+        check("第二次涂抹也入了栈（%s）" % g("opsAfterPencil"),
+              num("opsAfterPencil", -1) == num("opsAfterBrush", -2) + 1)
+        check("画笔在覆盖层上不留任何笔触（只有画笔操作时覆盖层是空的，%s 像素）"
+              % g("brushOnlyOverlayInk"), num("brushOnlyOverlayInk", -1) == 0)
         check("缩放后覆盖层与图片 transform 一致（%s）" % g("canvasTransform"),
               g("transformMatches") is True)
         check("复位后仍一致", g("transformMatchesAfterReset") is True)
@@ -748,7 +872,7 @@ def main():
               num("inkHidden", -1) == 0 and num("inkWithOverlay", 0) > 0)
         check("隐藏后按钮有 off 样式", g("hideBtnOffClass") is True)
         check("隐藏只影响显示，操作序列不变（%s）" % g("opsIntactWhileHidden"),
-              num("opsIntactWhileHidden", -1) == num("opsAfterBrush", -2))
+              num("opsIntactWhileHidden", -1) == num("opsBeforeOverlayTest", -2))
         check("隐藏后修改结果不变（目标色仍是 %s）" % g("countTargetWhileHidden"),
               num("countTargetWhileHidden", -1) == num("countAfterBrush", -2))
         check("隐藏状态下再拖会自动显示回来", g("autoShownOnDrag") is True)
@@ -757,18 +881,19 @@ def main():
         check("再点一下能恢复显示（%s）" % g("inkShownAgain"),
               num("inkShownAgain", 0) > 0)
         check("反复切换后操作序列仍然不变（%s）" % g("opsStillIntact"),
-              num("opsStillIntact", -1) == num("opsAfterBrush", -2))
+              num("opsStillIntact", -1) == num("opsBeforeOverlayTest", -2))
         check("撤回一步把操作弹掉（%s -> %s）"
               % (g("opsBeforeUndo"), g("opsAfterUndo")),
               num("opsAfterUndo", -1) == num("opsBeforeUndo", 0) - 1)
-        check("撤回画笔后目标色变多（%s -> %s）"
-              % (g("countBeforeUndo"), g("countAfterUndo")),
-              num("countAfterUndo", -1) > num("countBeforeUndo", -2))
+        check("撤回最后一次涂抹：那个方块回到原色（%s -> %s）"
+              % (g("pencilSpotAfter"), g("pencilSpotAfterUndo")),
+              str(g("pencilSpotAfterUndo")).upper() != str(g("brushHexPicked")).upper()
+              and str(g("pencilSpotAfterUndo")).upper()
+                  == str(g("pencilSpotBefore")).upper())
         check("重做恢复操作（%s）" % g("opsAfterRedo"),
               num("opsAfterRedo", -1) == num("opsBeforeUndo", -2))
-        check("重做后目标色回到撤回前（%s vs %s）"
-              % (g("countAfterRedo"), g("countBeforeUndo")),
-              num("countAfterRedo", -1) == num("countBeforeUndo", -2))
+        check("重做后那个方块又变回笔刷色（%s）" % g("pencilSpotAfterRedo"),
+              str(g("pencilSpotAfterRedo")).upper() == str(g("brushHexPicked")).upper())
         check("一路撤回到底后操作清空（%s）" % g("opsAfterUndoAll"),
               num("opsAfterUndoAll", -1) == 0)
         check("撤回到底后画面回到最初的抖动结果（目标色 %s vs 原始 %s）"
