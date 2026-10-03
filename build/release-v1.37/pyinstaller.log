@@ -1,0 +1,154 @@
+174 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.7
+174 INFO: Python: 3.14.7
+221 INFO: Platform: Windows-11-10.0.26200-SP0
+221 INFO: Python environment: C:\Users\Noelle\AppData\Local\Programs\Python\Python314
+222 INFO: wrote D:\地图画工具\build\release-v1.37\YaniNeko_MCmapart_tool.spec
+224 INFO: Removing temporary files and cleaning cache in C:\Users\Noelle\AppData\Local\pyinstaller
+4024 INFO: Module search paths (PYTHONPATH):
+['D:\\地图画工具',
+ 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\python314.zip',
+ 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\DLLs',
+ 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib',
+ 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314',
+ 'C:\\Users\\Noelle\\AppData\\Roaming\\Python\\Python314\\site-packages',
+ 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages',
+ 'D:\\地图画工具\\src']
+4307 INFO: Appending 'datas' from .spec
+4326 INFO: checking Analysis
+4326 INFO: Building Analysis because Analysis-00.toc is non existent
+4326 INFO: Looking for Python shared library...
+4326 INFO: Using Python shared library: C:\Users\Noelle\AppData\Local\Programs\Python\Python314\python314.dll
+4326 INFO: Running Analysis Analysis-00.toc
+4326 INFO: Target bytecode optimization level: 0
+4327 INFO: Initializing module dependency graph...
+4328 INFO: Initializing module graph hook caches...
+4374 INFO: Analyzing modules for base_library.zip ...
+5194 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+5209 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+5840 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+6211 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+6570 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+9190 INFO: Caching module dependency graph...
+9218 INFO: Analyzing D:\地图画工具\src\run_maptool.py
+9228 INFO: Processing standard module hook 'hook-uvicorn.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9707 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+9797 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+10078 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+10084 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+10725 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+10727 INFO: SetuptoolsInfo: initializing cached setuptools info...
+11403 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+11783 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+12293 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+12500 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+12897 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+15611 INFO: Processing standard module hook 'hook-psutil.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+16393 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+16630 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+17182 INFO: Processing standard module hook 'hook-anyio.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+18291 INFO: Processing standard module hook 'hook-pydantic.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+19154 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+21029 INFO: Analyzing hidden import 'fastapi.__main__'
+21031 INFO: Analyzing hidden import 'fastapi.middleware.cors'
+21040 INFO: Analyzing hidden import 'fastapi.middleware.gzip'
+21048 INFO: Analyzing hidden import 'fastapi.middleware.httpsredirect'
+21050 INFO: Analyzing hidden import 'fastapi.middleware.trustedhost'
+21053 INFO: Analyzing hidden import 'fastapi.middleware.wsgi'
+21061 INFO: Analyzing hidden import 'fastapi.staticfiles'
+21061 INFO: Analyzing hidden import 'fastapi.templating'
+21068 INFO: Analyzing hidden import 'fastapi.testclient'
+21097 INFO: Analyzing hidden import 'uvicorn.__main__'
+21098 INFO: Analyzing hidden import 'uvicorn.lifespan'
+21099 INFO: Analyzing hidden import 'uvicorn.lifespan.off'
+21101 INFO: Analyzing hidden import 'uvicorn.lifespan.on'
+21107 INFO: Analyzing hidden import 'uvicorn.loops'
+21107 INFO: Analyzing hidden import 'uvicorn.loops.asyncio'
+21108 INFO: Analyzing hidden import 'uvicorn.loops.auto'
+21110 INFO: Analyzing hidden import 'uvicorn.loops.zuvloop'
+21112 INFO: Analyzing hidden import 'uvicorn.protocols.http.auto'
+21112 INFO: Analyzing hidden import 'uvicorn.protocols.websockets.auto'
+21114 INFO: Analyzing hidden import 'uvicorn.workers'
+21119 INFO: Analyzing hidden import 'starlette.authentication'
+21125 INFO: Analyzing hidden import 'starlette.config'
+21133 INFO: Analyzing hidden import 'starlette.endpoints'
+21139 INFO: Analyzing hidden import 'starlette.middleware.authentication'
+21142 INFO: Analyzing hidden import 'starlette.schemas'
+21148 INFO: Analyzing hidden import 'pydantic.alias_generators'
+21150 INFO: Analyzing hidden import 'pydantic.class_validators'
+21151 INFO: Analyzing hidden import 'pydantic.datetime_parse'
+21152 INFO: Analyzing hidden import 'pydantic.decorator'
+21152 INFO: Analyzing hidden import 'pydantic.deprecated.decorator'
+21163 INFO: Analyzing hidden import 'pydantic.env_settings'
+21164 INFO: Analyzing hidden import 'pydantic.error_wrappers'
+21165 INFO: Analyzing hidden import 'pydantic.experimental'
+21165 INFO: Analyzing hidden import 'pydantic.experimental.arguments_schema'
+21167 INFO: Analyzing hidden import 'pydantic.experimental.missing_sentinel'
+21167 INFO: Analyzing hidden import 'pydantic.experimental.pipeline'
+21197 INFO: Analyzing hidden import 'pydantic.generics'
+21198 INFO: Analyzing hidden import 'pydantic.json'
+21198 INFO: Analyzing hidden import 'pydantic.mypy'
+21275 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21276 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+21281 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+21294 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21326 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21326 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+21337 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21338 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+21489 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+21504 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21800 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+21802 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21811 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+21812 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+22812 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+22812 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+22875 INFO: Analyzing hidden import 'pydantic.parse'
+22876 INFO: Analyzing hidden import 'pydantic.schema'
+22877 INFO: Analyzing hidden import 'pydantic.tools'
+22877 INFO: Analyzing hidden import 'pydantic.typing'
+22878 INFO: Analyzing hidden import 'pydantic.utils'
+22878 INFO: Analyzing hidden import 'pydantic.v1._hypothesis_plugin'
+22893 INFO: Analyzing hidden import 'pydantic.v1.generics'
+22907 INFO: Analyzing hidden import 'pydantic.v1.mypy'
+22947 INFO: Analyzing hidden import 'pydantic.validators'
+22948 INFO: Processing module hooks (post-graph stage)...
+23456 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+23860 INFO: Processing standard module hook 'hook-tzdata.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+24377 INFO: Performing binary vs. data reclassification (898 entries)
+24531 INFO: Looking for ctypes DLLs
+24586 INFO: Analyzing run-time hooks ...
+24589 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+24592 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+24595 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+24598 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+24621 INFO: Creating base_library.zip...
+24636 INFO: Looking for dynamic libraries
+25305 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\Noelle\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\numpy.libs']
+25305 INFO: Extra DLL search directories (PATH): []
+25868 INFO: Warnings written to D:\地图画工具\build\release-v1.37\work\YaniNeko_MCmapart_tool\warn-YaniNeko_MCmapart_tool.txt
+25932 INFO: Graph cross-reference written to D:\地图画工具\build\release-v1.37\work\YaniNeko_MCmapart_tool\xref-YaniNeko_MCmapart_tool.html
+25983 INFO: checking PYZ
+25983 INFO: Building PYZ because PYZ-00.toc is non existent
+25983 INFO: Building PYZ (ZlibArchive) D:\地图画工具\build\release-v1.37\work\YaniNeko_MCmapart_tool\PYZ-00.pyz
+26523 INFO: Building PYZ (ZlibArchive) D:\地图画工具\build\release-v1.37\work\YaniNeko_MCmapart_tool\PYZ-00.pyz completed successfully.
+26540 INFO: checking PKG
+26540 INFO: Building PKG because PKG-00.toc is non existent
+26540 INFO: Building PKG (CArchive) YaniNeko_MCmapart_tool.pkg
+26559 INFO: Building PKG (CArchive) YaniNeko_MCmapart_tool.pkg completed successfully.
+26560 INFO: Bootloader C:\Users\Noelle\AppData\Local\Programs\Python\Python314\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+26560 INFO: checking EXE
+26561 INFO: Building EXE because EXE-00.toc is non existent
+26561 INFO: Building EXE from EXE-00.toc
+26561 INFO: Copying bootloader EXE to D:\地图画工具\build\release-v1.37\work\YaniNeko_MCmapart_tool\YaniNeko_MCmapart_tool.exe
+26569 INFO: Copying icon to EXE
+26575 INFO: Copying 0 resources to EXE
+26576 INFO: Embedding manifest in EXE
+26580 INFO: Appending PKG archive to EXE
+26586 INFO: Fixing EXE headers
+26654 INFO: Building EXE from EXE-00.toc completed successfully.
+26667 INFO: checking COLLECT
+26667 INFO: Building COLLECT because COLLECT-00.toc is non existent
+26668 INFO: Building COLLECT COLLECT-00.toc
+27933 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+27958 INFO: Build complete! The results are available in: D:\地图画工具\build\release-v1.37\dist
