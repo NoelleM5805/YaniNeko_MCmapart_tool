@@ -74,11 +74,12 @@
 | `adjustments` | `ADJUST_KEYS` 12 项 + `ADJUST_UNIPOLAR`（锐化/清晰/暗角只有正方向）；`parse_adjust()` 解析并夹取范围；调整在**成品尺寸**上做，保证预览和生成一致 |
 | `imageops` | `flatten_image()`（透明图铺背景）、`fit_image()`（stretch/contain/cover）、`recommend_ratios()` 推荐地图比例 |
 | `schematic` | `pick_block_names()` 同色多选时按 `random`/`cycle`/`first` 分配；`count_block_usage()` 统计；`build_mapart_schematic()` 用 `BlockState(id, **props)` 写方块状态；`schem_to_bytes()`、`safe_stem()` / `safe_litematic_name()` |
-| `slicing` | `split_boundaries()` + `do_slice()`，按 Y 轴范围切、输出多个独立 `.litematic` |
+| `slicing` | `plan_split()` / `recommend_split()` 算推荐切法（每块 ≤128×128 = 一张地图）；`do_slice()` 切块；`preview_slice()` 出缩略图 + 每块统计。切分走 numpy 切片而不是逐格读写，序列化自己位打包（见下） |
 | `lichen` | `do_glow_lichen()` 与目标方块 ID（`minecraft:glow_lichen`）比对后批量改面属性 |
 | `keepalive` | `KEEPALIVE` 状态 + `_keepalive_watchdog()`；`KEEPALIVE_GRACE=15s`、`KEEPALIVE_TICK=2s`，靠 `armed` 防止没人连过就退出 |
 | `tasks` | `IMAGE_CACHE`（`MAX_IMAGE_CACHE=12`，LRU）、`add_log()` / `create_task()` / `finish_task()`，任务只留最近 `KEEP_TASKS=15` 个 |
 | `webapp` | `app` 与全部路由；`/` 读 `web/index.html`，`/static/{path}` 只服务 `web/` 下的文件（拼出来的绝对路径必须仍在 `web/` 内，挡 `../` 越界） |
+| `tasks` | 除了任务表，还有 `SLICE_CACHE`：切分预览时按「长度 + 首尾 64KB 哈希」把上传的投影缓存住，前端真正切分时只回传这个指纹，不用把文件再传一遍 |
 | `runtime` | `_NullWriter`、`stdout_is_tty()`、`_setup_console()`、`_install_excepthook()`、`safe_pause()` |
 | `__main__` | `main()`：打启动横幅 → 自检 `web/index.html` → 从默认端口开始自动找空闲端口 → 起 uvicorn 线程 + 保活看门狗 → 开浏览器 → 主循环 |
 
@@ -362,7 +363,133 @@ img                服务端渲染的权威结果（含所有已执行操作）
 | --- | --- | --- |
 | 颜色匹配 | 每次调用 10.6 µs | 可分离 float64 距离表；CIE 系列 numpy 向量化 |
 | 误差扩散 | 纯 Python 逐像素、每步做边界判断 | `_diffuse_flat()`：扁平 list + 2 格 padding + 预计算 tap 偏移，不做边界判断 |
+| 投影切分 | 逐格 `Region[lx,ly,lz]` 读 + 逐格 `sub[x,y,z] = blk` 写 | 直接切 `Region.__blocks`（numpy），只对**出现过的**下标建 `BlockState` |
+| 投影序列化 | `Region.to_nbt()` 里 `for x: for y: for z:` 逐格调 `LitematicaBitArray.__setitem__` | `_pack_longs()` 整个用 numpy 位移向量化，输出逐位一致 |
+| 读写投影 | 上传/输出各落一个临时文件 | nbtlib 本来就吃文件对象，改成 `BytesIO` 内存里做完 |
 
 关键约束：距离表必须用 **float64**，且通道保持整数。
 最初写成 float32 时，288 个颜色组合里有 3 个和原实现不一致 ——
 原实现是「整数通道 + float64 算术」，中途降精度会改变舍入结果。
+
+实测（512×512 = 26.2 万方块，切 8×8 = 64 个文件）：**0.26 s**，
+预览（含缩略图）0.26 s。`tests/slice_check.py` 里有性能上限守护，
+防止哪天又退回逐格循环。
+
+---
+
+## 八、投影切分为什么这么写
+
+### 切块尺寸
+
+一张地图在游戏里是 128×128 方块，所以「按投影尺寸自动切」的目标就是 128：
+`列数 = ceil(宽/128)`，`行数 = ceil(高/128)`，然后**均匀**分。均匀分让每块
+通常略小于 128（2000 宽切 16 列 = 每列 125），比「先切 128、余数丢给最后
+一块」整齐，也不会多切一刀。
+
+**手动指定就是最终结果**。用户常常按自己地图的编号来切，写了 2×3 就该是
+2×3，哪怕每块 192 格。所以 `plan_split` 在手动模式下完全不碰刀数，只把
+超标的块放进 `over` 让前端提醒一句。曾经写过「自动加刀到 ≤128」的版本，
+结果 `do_slice(384×384, cols=2, rows=3)` 偷偷切成 3×3 —— 这正是
+`regression_check.py` 抓出来的回归。
+
+### 为什么不能逐格读写
+
+litemapy 的 `Region.__getitem__` 每次要算坐标 + 查调色板 list，`__setitem__`
+还要 `block in self.__palette`（O(调色板大小)）。一个 384×384 的地图画有
+14.7 万格，切 64 块就是上千万次 Python 级调用。改成直接对
+`Region.__blocks`（`(x, y, z)` 的 numpy 数组）切片：
+
+```
+子区域 = lut[blocks[x0:x1, :, z0:z1]]        # lut: 区域下标 -> 全局下标
+```
+
+再只对**出现过的**下标建 `BlockState`，调色板手工摊好（0 号空气 + 其余按
+首次出现），连 `_optimize_palette()` 的逐格扫描都省了。
+
+### 位打包：跨 long 不分割
+
+Litematica 的 `BlockStates` 是「一个下标可以横跨两个 long」的位数组：
+
+```
+start = i * nbits; a = start >> 6; b = (start + nbits - 1) >> 6; off = start & 63
+array[a] |= val << off
+if a != b: array[b] |= val >> (64 - off)
+```
+
+因为 `nbits <= 64`，一个值最多横跨两个 long，所以两次 `np.add.at` 就能
+整个向量化，和逐格 `|=` 结果完全一致（`tests/slice_check.py` 用 7 组边界
+值逐下标验过）。
+
+还有一个**必须小心**的地方：`Region.__blocks` 的内存布局是 `(x, y, z)`，
+而 Litematica 的下标顺序是 `index = y*(W*L) + z*W + x`。直接
+`reshape(-1)` 得到的是 x 优先的顺序，文件照样能打开、方块却全乱。
+必须先 `transpose(1, 2, 0)` 再摊平。
+
+### 调色板顺序（字节等价的关键）
+
+子块的调色板顺序 = **本块内 x→y→z 遍历下的首次出现顺序**。原来那版是
+一格一格 `sub[x,y,z] = blk` 写进去的，litemapy 的调色板就是「首次出现就
+append」，所以顺序正好是这个。
+
+换成 numpy 之后如果按数值大小排（`np.unique` 的默认行为），方块一个不差、
+只是下标排列不同 —— 成品能开、也能用，但字节对不上，基准比对全红。
+所以 `_extract_cell` 用 `np.unique(..., return_index=True)` 再按
+`first` 排序。这一条修完，新旧两版切出来的文件**逐字节一致**
+（`tests/slice_check.py` 里断言了）。
+
+### 封面图是全分辨率逐像素渲染的
+
+**一个方块 = 一个像素，不做任何下采样。**
+
+一开始写的是「按 `max_side=512` 算出步长，用 `blocks[::step, :, ::step]`
+采样」—— 图是小了，但采样会把 1 格宽的东西（细边、文字笔画、抖动的噪点）
+整个跳过去，**预览和实际切出来的东西对不上**。预览存在的意义就是「所见即
+所得」，宁可图大一点。
+
+所以 `index_arrays()` 默认 `step=1`（传 `max_side` 才降采样），
+`preview_slice()` 出来的 PNG 尺寸严格等于投影的内容尺寸 `sx × sz`。
+前端用 `image-rendering: pixelated` 放大显示，缩放时每个方块还是硬边方块。
+
+`tests/slice_check.py` 里有一条逐像素断言：把预览图读回来，和源投影每一格
+`reg[x, 0, z]` 对应方块的代表色逐个比对（10000 格，0 处不符）。
+
+> `max_side` 参数保留着，但现在只作用于**统计**（数每块方块数），
+> 不再影响预览图。
+
+### 空块不产出文件
+
+源投影里没方块的位置不生成 `.litematic`。预览的每块明细里会把它置灰，
+但行列号仍然按完整网格编号，所以「第 3 行第 2 列」在预览和输出里指的是
+同一块。
+
+### 网格线要和预览图严格重合
+
+两个坑：
+
+1. **不能把画布绝对定位在带 padding 的容器上居中** —— 画布相对 padding box
+   居中，会整体偏掉一个 padding 的距离。改成套一层紧贴图片的
+   `.sl-figure`，画布 `inset: 0`。
+2. **最右/最下的那条线会落到画布外**。1px 的线要落在像素中心（`x.5`），
+   坐标取 `min(floor(v*k), W-1) + .5`；最后一条直接用 `W - .5`，
+   否则画布最后一格是 `W-1`，线被裁掉看不见。
+
+画布按 `devicePixelRatio` 放大（最多 2×）再 `setTransform` 缩放，所有
+几何量都用**画布像素**算，不要混用 CSS 像素 —— `getImageData` 拿到的是
+画布像素，混用会让几何校验永远对不上。
+
+### 保存为什么要并发
+
+以前是一个接一个 `await fetch` 再 `await blob()`，全部攒在内存里最后统一
+写。64 个文件光往返就很慢。现在：
+
+- 固定并发 6 个拉取
+- 能选目录就**边拉边写**，内存里不留整份
+- 不能选目录时回退逐个下载，并额外提供「打包成 zip 下载」（Chrome 会拦
+  「一次下很多文件」，64 个投影逐个下容易被拦掉）
+
+### 上传只传一次
+
+预览和切分是两次请求，如果都带文件，大投影要传两遍。所以预览时把内容按
+「长度 + 首尾 64KB 的 sha1」缓存进 `SLICE_CACHE`（只留最近 6 个），
+切分请求只带这个 key。`/api/slice/process` 仍然接受直接上传文件，
+所以直接调 API 的用法不受影响。

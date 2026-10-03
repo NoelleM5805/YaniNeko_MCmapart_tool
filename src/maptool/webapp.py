@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import traceback
+import zipfile
 
 from . import __version__, native
 from .adjustments import ADJUST_KEYS, ADJUST_LABELS, apply_image_adjust, parse_adjust
@@ -26,8 +27,9 @@ from .palette import ALL_BLOCK_IDS, BLOCK_SOURCE_FILE, DEFAULT_BLOCK_IDS, ICON_M
 from .repair import apply_repair, parse_repair, public_info
 from .schematic import build_mapart_schematic, count_block_usage, parse_alloc, pick_block_names, safe_litematic_name, safe_stem, schem_to_bytes
 from .lichen import do_glow_lichen
-from .slicing import do_slice
-from .tasks import add_log, cache_get_image, cache_put_image, create_task, finish_task
+from .slicing import MAP_SIZE, do_slice, preview_slice
+from .tasks import (add_log, cache_get_image, cache_get_slice, cache_put_image,
+                    cache_put_slice, create_task, finish_task)
 
 
 # ============================================================
@@ -516,36 +518,133 @@ async def api_mapart_generate(payload: dict):
 # ------------------------------------------------------------
 # 投影切分
 # ------------------------------------------------------------
-@app.post("/api/slice/process")
-async def api_slice_process(
+# 预览缩略图按内容指纹存，前端 <img src> 直接用（不重复传 base64）
+_PREVIEW_PNG = {}
+
+
+def _parse_slice_params(cols, rows, max_size):
+    """把前端传上来的切分参数收成 (cols, rows, max_size)，非法值给默认。"""
+    def _num(v, lo, hi):
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 0
+        if n < lo:
+            return 0
+        return min(n, hi)
+
+    c = _num(cols, 1, 256)
+    r = _num(rows, 1, 256)
+    m = _num(max_size, 16, 1024) or MAP_SIZE
+    # 只给了一个方向就当成「两个都给」处理会很难解释，所以要么都用要么都不用
+    if not (c and r):
+        c = r = 0
+    return c, r, m
+
+
+@app.post("/api/slice/preview")
+async def api_slice_preview(
     file: UploadFile = File(...),
-    cols: int = Form(4),
-    rows: int = Form(4),
+    cols: int = Form(0),
+    rows: int = Form(0),
+    max_size: int = Form(MAP_SIZE),
     filename: str = Form(""),
 ):
+    """
+    切分预览：不写任何文件、不建任务，直接算出「这么切会切出什么」。
+    返回切割方案 + 每块统计 + 缩略图，并把文件内容按指纹缓存住，
+    后面真正切分时前端只回传指纹，不用再上传一遍。
+    """
     content = await file.read()
+    if not content:
+        return JSONResponse({"ok": False, "msg": "文件是空的"}, status_code=400)
+    c, r, m = _parse_slice_params(cols, rows, max_size)
+    name = filename or getattr(file, "filename", "") or ""
+    try:
+        info = await asyncio.to_thread(
+            preview_slice, content, c or None, r or None,
+            base_name=name, max_size=m)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": "读不出投影文件：%s" % e},
+                            status_code=400)
+
+    key = cache_put_slice(content)
+    png = info.pop("preview_png", None)
+    info["ok"] = True
+    info["key"] = key
+    info["filename"] = getattr(file, "filename", "") or name
+    # 缩略图单独挂一条 URL 给 <img src> 用，不塞 base64 —— 大投影的
+    # PNG 能到几百 KB，塞进 JSON 会让整个预览响应白胖一圈。
+    info["preview_url"] = ("/api/slice/preview.png/%s" % key) if png else None
+    if png:
+        _PREVIEW_PNG[key] = png
+        while len(_PREVIEW_PNG) > 12:
+            _PREVIEW_PNG.pop(next(iter(_PREVIEW_PNG)), None)
+    return JSONResponse(info)
+
+
+@app.get("/api/slice/preview.png/{key}")
+def api_slice_preview_png(key: str):
+    png = _PREVIEW_PNG.get(key)
+    if not png:
+        return JSONResponse({"ok": False, "msg": "预览已过期"}, status_code=404)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/slice/process")
+async def api_slice_process(
+    file: UploadFile = File(None),
+    key: str = Form(""),
+    cols: int = Form(0),
+    rows: int = Form(0),
+    max_size: int = Form(MAP_SIZE),
+    filename: str = Form(""),
+):
+    """
+    真正切分。
+
+    优先用预览缓存下来的内容（key）；没有 key 时回退成直接读上传的文件，
+    所以老的前端/直接调 API 的用法都还能用。
+    """
+    content = None
+    if key:
+        content = cache_get_slice(key)
+    if content is None and file is not None:
+        content = await file.read()
+    if not content:
+        return JSONResponse({"ok": False, "msg": "文件已过期，请重新上传"},
+                            status_code=400)
+
+    c, r, m = _parse_slice_params(cols, rows, max_size)
+    name = filename or getattr(file, "filename", "") or ""
     tid = create_task("slice")
 
     def worker():
         task = TASKS[tid]
         try:
-            c = max(1, min(64, cols))
-            r = max(1, min(64, rows))
-            base = safe_stem(filename) or safe_stem(getattr(file, "filename", "")) or "slice"
-            add_log(task, f"列(X)：{c}，行(Z)：{r}")
-            add_log(task, f"输出文件名前缀：{base}_r?c?.litematic")
+            base = safe_stem(name) or safe_stem(getattr(file, "filename", "")) or "slice"
+            plan_txt = ("列(X)：%d，行(Z)：%d" % (c, r)) if (c and r) else \
+                "自动推荐（每块 ≤%d×%d）" % (m, m)
+            add_log(task, plan_txt)
+            add_log(task, "输出文件名：%s_r?c?.litematic" % base)
 
             def cb(done, total):
                 if done % 5 == 0 or done == total:
-                    add_log(task, f"进度：{done}/{total}")
+                    add_log(task, "进度：%d/%d" % (done, total))
 
             add_log(task, "正在切分…")
-            outputs = do_slice(content, c, r, progress_cb=cb, base_name=base)
-            add_log(task, f"生成 {len(outputs)} 个投影文件")
+            t0 = time.time()
+            outputs = do_slice(content, c or None, r or None,
+                               progress_cb=cb, base_name=base, max_size=m)
+            add_log(task, "生成 %d 个投影文件，用时 %.2fs" % (len(outputs), time.time() - t0))
 
-            # 不再压成 zip，逐个文件存进任务，前端逐个下载
+            # 不再压成 zip，逐个文件存进任务，前端逐个下载。
+            # 这里只放「文件名 / 大小 / 行列号」——每块尺寸和方块数由
+            # /api/slice/preview 提供，这里再放一份就是重复数据。
             files = [{"name": o["filename"], "size": len(o["bytes"]),
-                      "row": o["row"], "col": o["col"]} for o in outputs]
+                      "row": o["row"], "col": o["col"]}
+                     for o in outputs]
             total_bytes = sum(len(o["bytes"]) for o in outputs)
 
             task["slice_files"] = [o["bytes"] for o in outputs]
@@ -556,7 +655,7 @@ async def api_slice_process(
                 "files": files,
                 "base": base,
             }
-            add_log(task, f"完成 ✓ {len(outputs)} 个文件，共 {total_bytes/1024:.1f} KB")
+            add_log(task, "完成 ✓ %d 个文件，共 %.1f KB" % (len(outputs), total_bytes / 1024))
         except Exception as e:
             task["error"] = str(e)
             add_log(task, "❌ " + str(e))
@@ -586,6 +685,43 @@ def api_slice_file(tid: str, index: int):
         headers={
             "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(name),
             "Content-Length": str(len(files[index])),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/slice/zip/{tid}")
+def api_slice_zip(tid: str):
+    """
+    把切分结果打成一个 zip 流式吐出来。
+
+    Chrome 会拦「一次下很多文件」，64 个投影逐个下载要等十几秒还容易被
+    拦掉；这里给一个一次点完的出口。目录选择器可用时前端仍优先写目录。
+    """
+    t = TASKS.get(tid)
+    files = (t or {}).get("slice_files") or []
+    if not t or not files:
+        return JSONResponse({"ok": False, "msg": "文件不存在"}, status_code=404)
+    names = []
+    try:
+        names = [f["name"] for f in t["result"]["files"]]
+    except Exception:
+        names = ["slice_%d.litematic" % (i + 1) for i in range(len(files))]
+    base = t.get("result_name") or "slice"
+
+    def gen():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for name, data in zip(names, files):
+                z.writestr(name, data)
+        yield buf.getvalue()
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''%s"
+                                   % quote(base + "_投影切分.zip"),
             "Cache-Control": "no-store",
         },
     )

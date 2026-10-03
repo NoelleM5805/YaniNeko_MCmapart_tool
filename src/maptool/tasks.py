@@ -37,6 +37,47 @@ def cache_get_image(sid):
 
 
 # ============================================================
+# 切分用的上传缓存
+# ============================================================
+# 切分流程要上传两次会很难受（一次出预览、一次真正切），所以预览时把
+# 文件内容按「字节指纹」缓存起来，前端只要回传指纹就能直接切。
+# 只留最近几个，避免大投影把内存吃满。
+SLICE_CACHE = OrderedDict()
+SLICE_CACHE_LOCK = threading.Lock()
+MAX_SLICE_CACHE = 6
+
+
+def slice_key(content):
+    """内容指纹：长度 + 首尾 64KB 的哈希。够区分不同文件，又不用扫全文。"""
+    import hashlib
+    h = hashlib.sha1()
+    h.update(str(len(content)).encode("ascii"))
+    h.update(content[:65536])
+    h.update(content[-65536:])
+    return h.hexdigest()[:16]
+
+
+def cache_put_slice(content):
+    key = slice_key(content)
+    with SLICE_CACHE_LOCK:
+        SLICE_CACHE[key] = content
+        SLICE_CACHE.move_to_end(key)
+        while len(SLICE_CACHE) > MAX_SLICE_CACHE:
+            SLICE_CACHE.popitem(last=False)
+    return key
+
+
+def cache_get_slice(key):
+    if not key:
+        return None
+    with SLICE_CACHE_LOCK:
+        content = SLICE_CACHE.get(key)
+        if content is not None:
+            SLICE_CACHE.move_to_end(key)
+        return content
+
+
+# ============================================================
 # 任务系统
 # ============================================================
 def add_log(task, msg):

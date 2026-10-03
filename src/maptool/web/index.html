@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#EDF0F4">
+    <meta name="color-scheme" content="light dark">
     <title>地图画工具箱</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -11,8 +13,11 @@
 <body>
     <div class="app">
         <header>
-            <h1>🧰 地图画工具箱</h1>
-            <p>地图画生成（实时预览 + 点击放大）· 默认地面朝向 XZ · 投影切分 · Glow Lichen 批量修改</p>
+            <div class="hd-left">
+                <h1>地图画工具箱</h1>
+                <p>地图画生成（实时预览 + 点击放大）· 默认地面朝向 XZ · 投影切分 · Glow Lichen 批量修改</p>
+            </div>
+            <div class="hd-code">MAP ART TOOLKIT<span>WL-SYS / 01</span></div>
         </header>
 
         <div class="tabs">
@@ -521,50 +526,104 @@
         </div>
 
         <div class="tab-panel" data-panel="slice">
-            <div class="section">
-                <label class="s-label">1. 上传 .litematic 文件</label>
-                <div class="drop-zone" id="sl-drop">
-                    <input type="file" hidden accept=".litematic" id="sl-file">
-                    <div class="drop-icon">📦</div>
-                    <div class="drop-title">点击选择文件，或拖到这里</div>
-                    <div class="drop-sub">仅支持 .litematic 投影文件</div>
-                    <div class="file-info" id="sl-file-info" hidden>
-                        <span class="file-name" id="sl-file-name"></span>
-                        <span class="file-size" id="sl-file-size"></span>
-                        <button class="file-clear" id="sl-file-clear">✕</button>
+            <div class="sl-workspace">
+
+                <!-- ================= 左侧：参数 ================= -->
+                <div class="sl-controls">
+
+                    <div class="section">
+                        <label class="s-label">1. 上传 .litematic 文件</label>
+                        <div class="drop-zone" id="sl-drop">
+                            <input type="file" hidden accept=".litematic" id="sl-file">
+                            <div class="drop-icon">📦</div>
+                            <div class="drop-title">点击选择文件，或拖到这里</div>
+                            <div class="drop-sub">仅支持 .litematic 投影文件</div>
+                            <div class="file-info" id="sl-file-info" hidden>
+                                <span class="file-name" id="sl-file-name"></span>
+                                <span class="file-size" id="sl-file-size"></span>
+                                <button class="file-clear" id="sl-file-clear">✕</button>
+                            </div>
+                        </div>
+                        <div class="sl-size" id="sl-size" hidden></div>
+                    </div>
+
+                    <div class="section" id="sl-plan-sec" hidden>
+                        <label class="s-label">2. 切割方式</label>
+                        <div class="sl-reco" id="sl-reco">
+                            <div class="sl-reco-tag">推荐</div>
+                            <div class="sl-reco-txt" id="sl-reco-txt"></div>
+                            <button class="btn-small" id="sl-reco-apply">套用</button>
+                        </div>
+                        <div class="sl-mode">
+                            <label class="sl-radio">
+                                <input type="radio" name="sl-mode" value="auto" checked>
+                                <span>自动（按投影尺寸推荐）</span>
+                            </label>
+                            <label class="sl-radio">
+                                <input type="radio" name="sl-mode" value="manual">
+                                <span>手动指定网格</span>
+                            </label>
+                        </div>
+                        <div class="grid-2 sl-manual" id="sl-manual" hidden>
+                            <div>
+                                <label class="hint">X 方向列数</label>
+                                <input type="number" id="sl-cols" value="4" min="1" max="256">
+                            </div>
+                            <div>
+                                <label class="hint">Z 方向行数</label>
+                                <input type="number" id="sl-rows" value="4" min="1" max="256">
+                            </div>
+                        </div>
+                        <div class="sl-maxrow">
+                            <label class="hint">每块最大边长</label>
+                            <input type="number" id="sl-max-side" value="128" min="16" max="1024" step="16">
+                            <span class="hint">格</span>
+                        </div>
+                        <div class="s-hint">
+                            每个子区域保留完整 Y 轴高度；输出多个 .litematic 文件（按原文件名 + 行列号命名），不打包
+                        </div>
+                        <div class="sl-warn" id="sl-plan-warn" hidden></div>
+                    </div>
+
+                    <div class="section" id="sl-run-sec" hidden>
+                        <button class="btn-primary btn-block" id="sl-run">▶ 开始切分</button>
+                    </div>
+
+                    <div class="section" id="sl-save-sec" hidden style="margin-bottom:0">
+                        <button class="btn-success btn-block" id="sl-save">⬇ 保存全部投影文件</button>
+                        <button class="btn-block mt-8" id="sl-zip">🗜 打包成 zip 下载</button>
+                        <div class="hint mt-8" style="text-align:center" id="sl-save-name"></div>
                     </div>
                 </div>
-            </div>
 
-            <div class="section">
-                <label class="s-label">2. 切分网格</label>
-                <div class="grid-2">
-                    <div>
-                        <label class="hint">X 方向列数</label>
-                        <input type="number" id="sl-cols" value="4" min="1" max="64">
+                <!-- ================= 右侧：预览 ================= -->
+                <div class="sl-preview">
+
+                    <div class="section sl-prev-sec">
+                        <label class="s-label">切割预览</label>
+                        <div class="sl-empty" id="sl-prev-empty">
+                            上传一个 .litematic 投影，这里会显示缩略图和切割线
+                        </div>
+                        <div class="sl-stage" id="sl-stage" hidden>
+                            <div class="sl-figure">
+                                <img class="sl-thumb" id="sl-thumb" alt="投影缩略图">
+                                <canvas class="sl-grid" id="sl-grid"></canvas>
+                            </div>
+                        </div>
+                        <div class="sl-summary" id="sl-summary" hidden></div>
                     </div>
-                    <div>
-                        <label class="hint">Z 方向行数</label>
-                        <input type="number" id="sl-rows" value="4" min="1" max="64">
+
+                    <div class="section" id="sl-stats-sec" hidden style="margin-bottom:0">
+                        <label class="s-label">每块明细</label>
+                        <div class="sl-cells" id="sl-cells"></div>
+                    </div>
+
+                    <div class="section" style="margin-bottom:0">
+                        <label class="s-label">处理日志</label>
+                        <div class="log" id="sl-log">等待操作…</div>
                     </div>
                 </div>
-                <div class="s-hint">
-                    每个子区域保留完整 Y 轴高度；输出多个 .litematic 文件（按原文件名 + 行列号命名），不打包
-                </div>
-            </div>
 
-            <div class="section">
-                <button class="btn-primary btn-block" id="sl-run">▶ 开始切分</button>
-            </div>
-
-            <div class="section" id="sl-save-sec" hidden>
-                <button class="btn-success btn-block" id="sl-save">⬇ 保存全部投影文件</button>
-                <div class="hint mt-8" style="text-align:center" id="sl-save-name"></div>
-            </div>
-
-            <div class="section" style="margin-bottom:0">
-                <label class="s-label">处理日志</label>
-                <div class="log" id="sl-log">等待操作…</div>
             </div>
         </div>
 

@@ -66,7 +66,7 @@
             const dark = CFG.theme === "dark" || (CFG.theme === "auto" && mqDark && mqDark.matches);
             document.body.classList.toggle("dark", !!dark);
             const meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) meta.setAttribute("content", dark ? "#171c24" : "#eef2f7");
+            if (meta) meta.setAttribute("content", dark ? "#0B0D10" : "#EDF0F4");
         }
 
         if (mqDark && mqDark.addEventListener) {
