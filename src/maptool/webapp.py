@@ -27,6 +27,8 @@ from .palette import ALL_BLOCK_IDS, BLOCK_SOURCE_FILE, DEFAULT_BLOCK_IDS, ICON_M
 from .repair import apply_repair, parse_repair, public_info
 from .schematic import build_mapart_schematic, count_block_usage, parse_alloc, pick_block_names, safe_litematic_name, safe_stem, schem_to_bytes
 from .lichen import do_glow_lichen
+from .projection_repair import (apply_ops_preview, parse_ops, preview_payload,
+                                process_projection)
 from .slicing import MAP_SIZE, do_slice, preview_slice
 from .tasks import (add_log, cache_get_image, cache_get_slice, cache_put_image,
                     cache_put_slice, create_task, finish_task)
@@ -723,6 +725,67 @@ def api_slice_zip(tid: str):
             "Content-Disposition": "attachment; filename*=UTF-8''%s"
                                    % quote(base + "_投影切分.zip"),
             "Cache-Control": "no-store",
+        },
+    )
+
+
+# ------------------------------------------------------------
+# 投影噪点修正
+# ------------------------------------------------------------
+@app.post("/api/projection-repair/load")
+async def api_projection_repair_load(file: UploadFile = File(...)):
+    content = await file.read()
+    if not content:
+        return JSONResponse({"ok": False, "msg": "文件是空的"}, status_code=400)
+    name = getattr(file, "filename", "") or "projection.litematic"
+    try:
+        info = await asyncio.to_thread(preview_payload, content, name)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": "读不出投影文件：%s" % e},
+                            status_code=400)
+    info["key"] = cache_put_slice(content)
+    return JSONResponse(info)
+
+
+@app.post("/api/projection-repair/apply")
+async def api_projection_repair_apply(payload: dict):
+    key = payload.get("key")
+    content = cache_get_slice(key) if key else None
+    if content is None:
+        return JSONResponse({"ok": False, "msg": "文件已过期，请重新上传"},
+                            status_code=410)
+    ops = parse_ops(payload)
+    try:
+        info = await asyncio.to_thread(
+            apply_ops_preview, content, ops, payload.get("filename", ""))
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=400)
+    return JSONResponse(info)
+
+
+@app.post("/api/projection-repair/process")
+async def api_projection_repair_process(payload: dict):
+    key = payload.get("key")
+    content = cache_get_slice(key) if key else None
+    if content is None:
+        return JSONResponse({"ok": False, "msg": "文件已过期，请重新上传"},
+                            status_code=410)
+    ops = parse_ops(payload)
+    name = payload.get("filename") or "projection_repair.litematic"
+    try:
+        data, info = await asyncio.to_thread(
+            process_projection, content, ops, name)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=400)
+    out_name = safe_litematic_name(name)
+    return Response(
+        content=data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(out_name),
+            "Content-Length": str(len(data)),
+            "Cache-Control": "no-store",
+            "X-Repair-Blocks": str(info.get("blocks", 0)),
         },
     )
 

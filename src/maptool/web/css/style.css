@@ -3400,3 +3400,32 @@ body.focus-mode .preview-box canvas.pixel-canvas {
         max-height: 340px;
     }
 }
+
+/* ---------- 投影噪点修正 ---------- */
+#pr-canvas {
+    display: block;
+    max-width: none;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+#pr-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+
+#pr-stage {
+    overflow: hidden;
+    height: min(68vh, 720px);
+    min-height: 360px;
+}
+#pr-canvas, #pr-overlay {
+    transform-origin: center center;
+    will-change: transform;
+}

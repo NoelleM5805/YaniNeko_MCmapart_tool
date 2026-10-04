@@ -64,6 +64,14 @@ def find_available_port(start=None, host=HOST, limit=PORT_SCAN_LIMIT):
                 s.bind((host, port))
             return port
         except OSError:
+            # Windows 上端口刚关闭时可能处于 TIME_WAIT，直接 bind 会失败，
+            # 但 uvicorn 启动时带 SO_REUSEADDR，实际仍可复用。这里再用一次
+            # connect 探测：连不上说明没有正在监听的进程，可以尝试使用。
+            try:
+                with socket.create_connection((host, port), timeout=0.08):
+                    pass
+            except OSError:
+                return port
             continue
     return None
 

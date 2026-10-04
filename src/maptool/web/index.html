@@ -25,6 +25,7 @@
             <button class="tab active" data-tab="mapart">🎨 地图画生成</button>
             <button class="tab" data-tab="slice">✂️ 投影切分</button>
             <button class="tab" data-tab="lichen">🌿 Glow Lichen</button>
+            <button class="tab" data-tab="projection-repair">🧹 投影噪点修改</button>
         </div>
 
         <div class="tab-panel active" data-panel="mapart">
@@ -676,6 +677,103 @@
             </div>
         </div>
 
+        <div class="tab-panel" data-panel="projection-repair">
+            <div class="sl-workspace">
+                <div class="sl-controls">
+
+                    <div class="section">
+                        <label class="s-label">1. 上传投影文件</label>
+                        <div class="drop-zone" id="pr-drop">
+                            <input type="file" hidden accept=".litematic" id="pr-file">
+                            <div class="drop-icon">🧹</div>
+                            <div class="drop-title">点击选择 .litematic，或拖到这里</div>
+                            <div class="drop-sub">输入和输出都是投影文件</div>
+                            <div class="file-info" id="pr-file-info" hidden>
+                                <span class="file-name" id="pr-file-name"></span>
+                                <span class="file-size" id="pr-file-size"></span>
+                                <button class="file-clear" id="pr-file-clear">✕</button>
+                            </div>
+                        </div>
+                        <div class="hint mt-8" id="pr-size-info"></div>
+                    </div>
+
+                    <div class="section" id="pr-tools-sec" hidden>
+                        <label class="s-label">2. 目标方块</label>
+                        <button class="btn-small btn-block" id="pr-pick" style="margin-bottom:8px">
+                            🎯 从预览图拾取
+                        </button>
+                        <div class="rp-pal" id="pr-pal"></div>
+
+                        <div class="rp-tabs">
+                            <button class="rp-tab active" data-prtool="lasso">套索</button>
+                            <button class="rp-tab" data-prtool="brush">画笔</button>
+                        </div>
+
+                        <div id="pr-pane-lasso">
+                            <div class="hint mb-6">
+                                在预览图上拖拽圈选区；圈完点执行按钮才修改。
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>修复强度</span>
+                                    <span class="adj-val" id="pr-level-v">5</span>
+                                </div>
+                                <input type="range" id="pr-level" min="1" max="8" step="1" value="5">
+                            </div>
+                            <button class="btn-primary btn-block" id="pr-exec" disabled>✅ 执行降噪</button>
+                            <div class="rp-row rp-row-2">
+                                <button class="btn-small" id="pr-fill" disabled>🎨 填充</button>
+                                <button class="btn-small" id="pr-revert" disabled>↩ 还原</button>
+                            </div>
+                            <button class="btn-small btn-block" id="pr-clear-sel" disabled style="margin-top:6px">
+                                取消当前选区
+                            </button>
+                        </div>
+
+                        <div id="pr-pane-brush" hidden>
+                            <div class="hint mb-6">
+                                按住涂抹直接改本地预览；松开后点「应用画笔修改」才提交。
+                            </div>
+                            <div class="adj-row">
+                                <div class="adj-top">
+                                    <span>笔头大小（方块）</span>
+                                    <span class="adj-val" id="pr-size-v">6</span>
+                                </div>
+                                <input type="range" id="pr-size" min="1" max="40" step="1" value="6">
+                            </div>
+                            <div class="rp-row rp-row-2">
+                                <button class="btn-primary" id="pr-apply-brush" disabled>✅ 应用画笔修改</button>
+                                <button class="btn-small" id="pr-cancel-brush" disabled>↩ 取消未提交</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section" id="pr-run-sec" hidden>
+                        <button class="btn-success btn-block" id="pr-save">⬇ 保存修改后的投影</button>
+                        <button class="btn-small btn-block mt-8" id="pr-undops">↩ 撤回一步</button>
+                    </div>
+
+                    <div class="section" style="margin-bottom:0">
+                        <label class="s-label">处理日志</label>
+                        <div class="log" id="pr-log">等待上传…</div>
+                    </div>
+                </div>
+
+                <div class="sl-preview">
+                    <div class="section sl-prev-sec" style="margin-bottom:0">
+                        <label class="s-label">预览（1 格 = 1 像素）</label>
+                        <div class="sl-empty" id="pr-empty">上传 .litematic 后显示投影预览</div>
+                        <div class="sl-stage" id="pr-stage" hidden>
+                            <div class="sl-figure" id="pr-figure">
+                                <canvas id="pr-canvas"></canvas>
+                                <canvas id="pr-overlay"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="status-bar">
             <span id="status">就绪</span>
             <span class="badge" id="badge">—</span>
@@ -748,6 +846,7 @@
     <script src="/static/js/70-mapart.js"></script>
     <script src="/static/js/80-slice.js"></script>
     <script src="/static/js/85-lichen.js"></script>
+    <script src="/static/js/86-projection-repair.js"></script>
     <script src="/static/js/88-repair.js"></script>
     <script src="/static/js/89-undo.js"></script>
     <script src="/static/js/90-init.js"></script>

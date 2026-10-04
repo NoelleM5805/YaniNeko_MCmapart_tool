@@ -3,11 +3,12 @@
 YaniNeko_MCmapart_tool —— 地图画工具箱
 =============================
 
-把 Minecraft 地图画相关的三件事打包成一个本地 Web 服务：
+把 Minecraft 地图画相关的几件事打包成一个本地 Web 服务：
 
   1. 图片转 2D 地图画（.litematic）—— 调参实时预览、点击放大、用量统计
-  2. 投影切分（.litematic → 分块 zip）
-  3. Glow Lichen 面属性批量修改
+  2. 投影切分（.litematic → 分块投影）
+  3. 投影噪点修改（.litematic → 修改后的 .litematic）
+  4. Glow Lichen 面属性批量修改
 
 模块划分（自下而上，不出现循环依赖）::
 
@@ -37,5 +38,5 @@ YaniNeko_MCmapart_tool —— 地图画工具箱
     dist/                 发行版
 """
 
-__version__ = "1.37"
+__version__ = "1.38"
 __all__ = ["__version__"]
