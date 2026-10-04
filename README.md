@@ -5,6 +5,7 @@
 > global undo), slice schematics to map-sized pieces, and batch-edit Glow Lichen
 > faces. Runs entirely on `127.0.0.1`. Chinese UI.
 
+纯AI编程
 把 Minecraft 地图画相关的三件事打包成一个**本地网页工具**：
 上传图片就能实时预览、点击放大、导出投影文件。
 
