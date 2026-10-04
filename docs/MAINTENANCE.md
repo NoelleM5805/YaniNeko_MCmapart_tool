@@ -1,6 +1,6 @@
 # 长期维护指南
 
-> Pictomapart · 地图画工具箱 —— 维护手册
+> YaniNeko_MCmapart_tool · 地图画工具箱 —— 维护手册
 >
 > 适用范围：接手这个仓库、做例行维护、准备发新版时的操作手册。
 > 配套阅读：`README.md`（功能与用法）、`ARCHITECTURE.md`（架构与设计取舍）、

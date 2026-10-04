@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 echo.
-echo   Pictomapart - 打包成单文件 exe
+echo   YaniNeko_MCmapart_tool - 打包成单文件 exe
 echo   ==============================
 echo.
 python tools\build.py %*

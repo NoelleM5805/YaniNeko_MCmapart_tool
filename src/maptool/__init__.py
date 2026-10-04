@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Pictomapart —— 地图画工具箱
+YaniNeko_MCmapart_tool —— 地图画工具箱
 =============================
 
 把 Minecraft 地图画相关的三件事打包成一个本地 Web 服务：

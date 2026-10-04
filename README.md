@@ -1,6 +1,6 @@
-# Pictomapart · 地图画工具箱
+# YaniNeko_MCmapart_tool · 地图画工具箱
 
-> **Pictomapart** — a local web tool for Minecraft map-art: convert images to 2D
+> **YaniNeko_MCmapart_tool** — a local web tool for Minecraft map-art: convert images to 2D
 > map-art `.litematic` schematics (live preview, dithering, local noise repair,
 > global undo), slice schematics to map-sized pieces, and batch-edit Glow Lichen
 > faces. Runs entirely on `127.0.0.1`. Chinese UI.
@@ -377,7 +377,7 @@ python tests\exe_check.py            # 发行版（需要先打包）
 时间戳归零、再比解压后的内容。
 
 `exe_check.py` 用的是**完全相同的那套请求**（直接 `import regression_check` 复用），
-只是把「新版」换成 `dist\maptool\Pictomapart.exe`，另外顺带检查打进去的前端资源
+只是把「新版」换成 `dist\YaniNeko_MCmapart_tool\YaniNeko_MCmapart_tool.exe`，另外顺带检查打进去的前端资源
 能不能取到、`/static/` 的越界读取有没有挡住。
 
 `web_split_check.py` 做三件事：

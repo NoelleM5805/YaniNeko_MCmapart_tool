@@ -1,5 +1,5 @@
 // ============================================================================
-// Pictomapart 抖动计算核心（C++）
+// YaniNeko_MCmapart_tool 抖动计算核心（C++）
 // ============================================================================
 //
 // 为什么是「普通 C DLL + ctypes」而不是 Python 扩展模块：
@@ -310,7 +310,7 @@ struct MatchCache {
 // 导出的 C ABI
 // ============================================================================
 
-MP_EXPORT const char* mp_version() { return "pictomapart-dither-cpp-1"; }
+MP_EXPORT const char* mp_version() { return "yanineko_mcmapart_tool-dither-cpp-1"; }
 
 MP_EXPORT void* mp_pal_new(int mode, int n,
                            const double* colors, const int32_t* rgb_int,

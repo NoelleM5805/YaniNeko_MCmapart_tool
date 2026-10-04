@@ -281,11 +281,11 @@ def assemble(exe, ver, want_zip=True):
     target_exe = os.path.join(out, exe_stem() + ".exe")
     shutil.copy2(exe, target_exe)
 
-    # 说明文件：从 packaging/ 复制，顺手把里面的程序名和版本号替换掉
+    # 说明文件：从 packaging/ 复制，顺手把里面的版本号替换掉
     txt_src = os.path.join(PACKAGING, "使用说明.txt")
     if os.path.isfile(txt_src):
         body = open(txt_src, encoding="utf-8").read()
-        body = body.replace("Pictomapart", APP_NAME).replace("__VERSION__", ver)
+        body = body.replace("__VERSION__", ver)
         open(os.path.join(out, "使用说明.txt"), "w", encoding="utf-8",
              newline="\r\n").write(body)
     else:

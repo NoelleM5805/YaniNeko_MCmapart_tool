@@ -1,16 +1,16 @@
-Pictomapart —— 地图画工具箱
+YaniNeko_MCmapart_tool —— 地图画工具箱
 ====================================================
 版本：__VERSION__
 
 【程序文件】
-    Pictomapart.exe
+    YaniNeko_MCmapart_tool.exe
         单文件程序，双击即可运行（首次启动要解包，约 2~8 秒）。
         同目录另外还有：
             使用说明.txt        就是本文件
 
 
 【怎么用】
-    1. 双击 Pictomapart.exe
+    1. 双击 YaniNeko_MCmapart_tool.exe
     2. 程序会自动打开浏览器。默认地址是 http://127.0.0.1:8765；
        如果该端口已被占用，程序会自动换到后面的空闲端口，
        以启动窗口中打印的「监听地址」为准。
