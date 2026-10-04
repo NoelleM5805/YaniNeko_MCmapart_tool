@@ -35,15 +35,24 @@ chaquopy {
     defaultConfig {
         version = "3.12"
         pip {
-            // 注意：numpy 必须 >= 2.1（见 README）。Chaquopy 会从它自己的仓库
-            // 取 Android 轮子；litemapy / nbtlib / fastapi / uvicorn / multipart 是纯 Python。
+            // 注意：numpy 必须 >= 2.1（见 README，针对 Python 3.13+）；Chaquopy 用
+            // Python 3.12，仓库里是 numpy 1.26.2，功能兼容。
             install "numpy"
-            install "fastapi"
+            // fastapi 0.142 强制 pydantic v2 -> pydantic-core（Rust），Chaquopy 仓库
+            // 没有它的安卓轮子，会回退源码构建失败。本后端不用 pydantic 模型，
+            // 所以退回 pydantic v1（纯 Python）+ 兼容 v1 的 fastapi。
+            install "fastapi==0.115.6"
+            install "pydantic==1.10.15"
             install "uvicorn"
             install "litemapy"
             install "nbtlib"
             install "pillow"
             install "python-multipart"
+            // 本机走 Steam++ 加速代理时，pip 会因代理 MITM 证书校验失败。
+            // --trusted-host 跳过这几台主机的证书校验（仅影响构建期下载，不进 APK）。
+            options "--trusted-host", "pypi.org"
+            options "--trusted-host", "chaquo.com"
+            options "--trusted-host", "files.pythonhosted.org"
         }
     }
 }
@@ -51,4 +60,16 @@ chaquopy {
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.webkit:webkit:1.12.0'
+}
+
+// 某传递依赖带进了旧版 kotlin-stdlib-jdk7/jdk8(1.6.21)，和 Chaquopy 的
+// kotlin-stdlib 1.8.22 冲突（Kotlin 1.8 起 jdk7/jdk8 已并入主 stdlib）。
+// 强制统一到 1.8.22 消除重复类。
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'org.jetbrains.kotlin'
+                && details.requested.name.startsWith('kotlin-stdlib')) {
+            details.useVersion '1.8.22'
+        }
+    }
 }

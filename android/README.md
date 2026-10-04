@@ -24,11 +24,12 @@ android/
 
 ## 构建步骤
 
-### 0. 环境要求（本机无法构建，需在装了以下工具的机器上执行）
+### 0. 环境要求
 
-- **Android Studio**（含 Android SDK Platform 35、Build-Tools、`arm64-v8a` NDK）
-- JDK 17
-- 首次构建需联网（拉 Gradle 8.7、AGP 8.5.2、Chaquopy 16.0.0，以及 numpy/fastapi 等 Python 轮子）
+- **Android Studio**(含 SDK Platform 35、Build-Tools 34/35、`arm64-v8a` NDK;SDK 默认在 `%LOCALAPPDATA%\Android\Sdk`)
+- **JDK 17**(`C:\Program Files\Java\jdk-17`;注意 Android Studio 自带的 JBR 是 JDK 25,与 AGP 8.5.2 不兼容)
+- Gradle 8.7(见下「Gradle」)
+- 首次构建需联网(拉 AGP 8.5.2、Chaquopy 16.0.0、以及 numpy/fastapi 等 Python 轮子)
 
 ### 1. 复制后端源码
 
@@ -84,9 +85,38 @@ gradlew bundleRelease          :: 上架用 AAB（需先配签名）
   已支持按裸名加载 `.so`。
 - **版本号**：`app/build.gradle` 里的 `versionName` 需与 `src/maptool/__init__.py` 的
   `__version__` 保持一致。
-- **Python 版本**：Chaquopy 的 `version = "3.12"` 以 Chaquopy 支持矩阵为准；桌面用 3.13/3.14，
-  若 Chaquopy 已支持更高版本可对齐。
 - **minSdk 29**：为用 `MediaStore.Downloads` 简化保存；如需支持更老设备，请回退到
   `WRITE_EXTERNAL_STORAGE` + 直接写公共目录。
 - **真机验证**：M1（原生壳跑通）之后需在真机验证上传→生成→保存、切分→zip 下载、
   双指捏合、撤回/重做等交互。
+
+## 本机构建实测（2026-04，已出 APK）
+
+本机（Windows + JDK 17 + Gradle 8.7）已成功构建出 `app/build/outputs/apk/debug/app-debug.apk`
+（约 38.6 MB，`arm64-v8a`）。踩过的坑与对应处理（都已写进本工程）：
+
+| 坑 | 处理 |
+| --- | --- |
+| 项目路径含中文 `D:\地图画工具` | `gradle.properties` 里 `android.overridePathCheck=true` |
+| Gradle 官方源被墙 | 用腾讯镜像下 `gradle-8.7-bin.zip`，解压后用其 `bin\gradle.bat`（`JAVA_HOME` 指向 JDK 17） |
+| pip 访问 pypi/chaquo.com 报 SSL 证书校验失败（Steam++ 代理 MITM） | `app/build.gradle` 里 `pip { options "--trusted-host", ... }` |
+| fastapi 0.142 强制 pydantic v2 → pydantic-core（Rust）无安卓轮子 | 退回 `fastapi==0.115.6` + `pydantic==1.10.15`（纯 Python，本后端不用 pydantic 模型） |
+| `kotlin-stdlib` 1.8.22 与传递依赖的 `jdk7/jdk8` 1.6.21 重复类 | `configurations.configureEach` 强制统一到 1.8.22 |
+
+构建命令（本机）：
+
+```bat
+set JAVA_HOME=C:\Program Files\Java\jdk-17
+set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
+D:\gradle-8.7\bin\gradle.bat assembleDebug
+```
+
+安装到真机（arm64，需开 USB 调试）：
+
+```bat
+%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe install -r app\build\outputs\apk\debug\app-debug.apk
+```
+
+> 注意：当前 APK 只编了 `arm64-v8a`（真机主流）。本机 SDK 里的模拟器系统镜像是
+> x86_64，跑这个 arm64 APK 需要 ARM 转译、较慢；如要用 x86_64 模拟器，请在
+> `app/build.gradle` 的 `abiFilters` 里加 `"x86_64"` 后重编。
