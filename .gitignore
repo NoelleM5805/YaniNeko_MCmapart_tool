@@ -27,6 +27,17 @@ tools/_build_cache/
 *.log
 
 # ------------------------------------------------------------------
+# 安卓工程构建产物
+# ------------------------------------------------------------------
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# 由 android/prepare.py 生成的 Python 后端副本（源在 src/maptool/，不重复跟踪）
+android/app/src/main/python/maptool/
+
+# ------------------------------------------------------------------
 # 说明：
 #   * legacy/ 整个目录是历史留档 + 回归测试的「旧版基准」，不要忽略。
 #   * src/maptool/data/blockdata.py 与 block_icons.png 虽由 tools/gen_blockdata.py

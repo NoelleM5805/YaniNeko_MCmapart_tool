@@ -1,0 +1,110 @@
+/* ============================================================
+   移动端适配（独立文件，桌面加载，但只在窄屏 / 触屏下生效）
+   ============================================================
+   桌面端行为完全不变：本文件只追加媒体查询与移动端悬浮控件样式，
+   不改动 style.css 的任何原有 token。
+   ============================================================ */
+
+/* ---------- 平板 / 窄窗口：三栏 workspace 改成单列堆叠 ---------- */
+@media (max-width: 900px) {
+    .workspace {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 14px;
+    }
+    /* 手机上优先看到「上传 + 预览 + 生成」，调参与设置放到后面 */
+    .mp-main { order: 1; }
+    .sidebar-left { order: 2; }
+    .sidebar-right { order: 3; }
+
+    .sidebar-left,
+    .sidebar-right {
+        min-width: 0;
+        max-width: none;
+    }
+
+    .pal-dialog {
+        width: 94vw;
+        max-width: 94vw;
+        max-height: 90vh;
+    }
+}
+
+/* ---------- 手机竖屏 ---------- */
+@media (max-width: 560px) {
+    body { padding: 8px; }
+
+    header { padding: 12px 14px 10px; }
+    header h1 { font-size: 15px; letter-spacing: .08em; }
+    header p { display: none; }
+
+    .tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    .tabs .tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding: 9px 12px;
+        font-size: 12.5px;
+    }
+
+    .tab-panel { padding: 12px 10px; }
+
+    .grid-2 { grid-template-columns: 1fr; }
+    .preview-row { grid-template-columns: 1fr; }
+    .sl-workspace { grid-template-columns: minmax(0, 1fr); }
+
+    .preview-box { min-height: 220px; }
+    .preview-row.solo .preview-box { min-height: 70vh; }
+
+    .modal-toolbar { gap: 4px; padding: 8px 10px; }
+    .modal-toolbar button { min-width: 40px; }
+
+    .status-bar { flex-wrap: wrap; gap: 6px; }
+
+    /* 更大的触控目标 */
+    button,
+    .btn-small,
+    .btn-primary,
+    .btn-success,
+    .tab,
+    .rp-tab,
+    .pal-open {
+        min-height: 40px;
+    }
+    .btn-small { padding: 8px 12px; }
+    input[type="range"] { height: 32px; }
+    select, input[type="number"], input[type="text"] {
+        min-height: 38px;
+    }
+}
+
+/* ---------- 触屏悬浮撤回 / 重做按钮（98-mobile.js 注入） ---------- */
+#mb-undo-bar {
+    position: fixed;
+    right: 12px;
+    bottom: 14px;
+    display: flex;
+    gap: 10px;
+    z-index: 9999;
+}
+#mb-undo-bar button {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-strong);
+    font-size: 20px;
+    line-height: 1;
+    box-shadow: 0 2px 10px var(--shadow-strong, rgba(0, 0, 0, .25));
+    -webkit-tap-highlight-color: transparent;
+}
+#mb-undo-bar button:disabled {
+    opacity: .35;
+}
+#mb-undo-bar button:active:not(:disabled) {
+    transform: scale(.94);
+    background: var(--soft);
+}

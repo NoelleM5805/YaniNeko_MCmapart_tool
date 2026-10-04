@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'com.yanineko.maptool'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.yanineko.maptool"
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName "1.37"   // 与 src/maptool/__init__.py 的 __version__ 对齐
+        ndk {
+            // 主流手机都是 arm64；如需 32 位旧机再加 "armeabi-v7a"
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.12"
+        pip {
+            // 注意：numpy 必须 >= 2.1（见 README）。Chaquopy 会从它自己的仓库
+            // 取 Android 轮子；litemapy / nbtlib / fastapi / uvicorn / multipart 是纯 Python。
+            install "numpy"
+            install "fastapi"
+            install "uvicorn"
+            install "litemapy"
+            install "nbtlib"
+            install "pillow"
+            install "python-multipart"
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.12.0'
+}

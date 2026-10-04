@@ -1,0 +1,7 @@
+// 顶层构建脚本：只声明插件版本，不在这里 apply。
+// 版本组合（Gradle 8.7 + AGP 8.5.2 + Chaquopy 16.0.0）为常用可用组合，
+// 实际以本机 Android Studio / SDK 为准，必要时微调。
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+    id 'com.chaquo.python' version '16.0.0' apply false
+}

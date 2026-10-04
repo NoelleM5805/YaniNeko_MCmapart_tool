@@ -12,6 +12,23 @@ import threading
 HOST = "127.0.0.1"
 
 
+def is_android():
+    """
+    是否运行在安卓环境（Chaquopy / python-for-android）。
+
+    优先看宿主显式设置的 MAPART_PLATFORM（安卓 App 启动 Python 前会设置），
+    因为标准 CPython 在安卓上 sys.platform 仍是 "linux"，不主动打标记；
+    其余用运行时信号兜底。
+    """
+    if os.environ.get("MAPART_PLATFORM", "").strip().lower() == "android":
+        return True
+    if sys.platform == "android":              # python-for-android / Kivy
+        return True
+    if hasattr(sys, "getandroidapilevel"):     # python-for-android
+        return True
+    return False
+
+
 def _env_port(default=8765):
     """
     端口可用环境变量覆盖，方便和别的实例并存：
@@ -98,6 +115,11 @@ def get_base_dir():
 def _root_candidates():
     """资源根目录的候选位置（去重，保持顺序）。"""
     cands = []
+    # 安卓：宿主把 web/、data/ 从 APK assets 解压到 filesDir 后，通过环境变量
+    # 传入该目录。放最前，让安卓上的资源根优先命中。
+    root = os.environ.get("MAPART_RESOURCE_ROOT", "").strip()
+    if root:
+        cands.append(root)
     if hasattr(sys, "_MEIPASS"):
         cands.append(sys._MEIPASS)
     cands.append(os.path.dirname(os.path.abspath(__file__)))

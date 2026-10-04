@@ -93,6 +93,17 @@ def _load():
                 return _lib
             except Exception as e:                    # noqa: BLE001
                 _error = "%s：%s" % (p, e)
+        # 安卓：.so 在 App 的 nativeLibraryDir（不跟 .py 在一起），按裸名交给
+        # 动态链接器找（Chaquopy / python-for-android 都会把该目录加进搜索路径）。
+        if not sys.platform.startswith("win"):
+            try:
+                lib = ctypes.CDLL(_LIB_NAME)
+                _bind(lib)
+                _lib = lib
+                _error = None
+                return _lib
+            except Exception as e:                    # noqa: BLE001
+                _error = "%s：%s" % (_LIB_NAME, e)
         if _error is None:
             _error = "没找到 %s（跑 python tools/build_native.py 可以编译）" % _LIB_NAME
         return None
