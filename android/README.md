@@ -69,14 +69,20 @@ gradlew bundleRelease          :: 上架用 AAB（需先配签名）
 - **资源定位**：`web/`、`data/` 都在 `maptool` 包内，后端 `get_base_dir()` 靠 `__file__`
   直接找到，无需额外解压。若以后改用 assets，`config.py` 也支持
   `MAPART_RESOURCE_ROOT` 环境变量注入。
+- **文件上传**：`<input type="file">` 在 WebView 里**必须**由 `WebChromeClient.onShowFileChooser`
+  + `onActivityResult` 接管，否则点了毫无反应（前端是「点上传区 → `input.click()`」触发）。
+  已实现：`accept="image/*"` 走系统照片选择器，`.litematic` 走 DocumentsUI（MIME 拿不到时
+  回退 `*/*`）。
 - **下载**：
   - 单文件（地图画 / 地衣）→ 前端 `saveBlob` 走 `window.AndroidBridge.saveFile(name, base64)`，
     宿主写 `MediaStore.Downloads`（系统「下载」目录）。
   - 真实 URL（切分的「打包成 zip」）→ WebView `DownloadListener` 交给系统 `DownloadManager`。
   - 切分的「保存全部投影文件」（多文件 blob 下载）在安卓上暂未桥接，请先用「打包成 zip」。
 - **移动端交互**：前端新增 `web/css/mobile.css`（响应式）+ `web/js/98-mobile.js`
-  （双指捏合缩放、撤回/重做悬浮按钮、下载桥接），仅由 `window.__ANDROID__` 触发，
-  桌面行为零变化。
+  （双指捏合缩放、撤回/重做悬浮按钮、下载桥接），仅由 `window.AndroidBridge` /
+  `window.__ANDROID__` 触发，桌面行为零变化。
+  > `__ANDROID__` 由 `WebViewClient.onPageFinished` 注入（页面导航会重置 window，
+  > 不能在 `loadUrl` 之前注入）；`AndroidBridge` 不受导航影响，是更可靠的标记。
 
 ## 注意事项 / 待办
 
