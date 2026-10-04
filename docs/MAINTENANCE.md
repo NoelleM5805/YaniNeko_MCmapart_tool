@@ -3,7 +3,8 @@
 > Pictomapart · 地图画工具箱 —— 维护手册
 >
 > 适用范围：接手这个仓库、做例行维护、准备发新版时的操作手册。
-> 配套阅读：`README.md`（功能与用法）、`ARCHITECTURE.md`（架构与设计取舍）。
+> 配套阅读：`README.md`（功能与用法）、`ARCHITECTURE.md`（架构与设计取舍）、
+> `CONTRIBUTING.md`（贡献/提交规范）。
 
 ---
 
@@ -204,8 +205,8 @@ python tools\build_native.py --check   :: 只检查工具链
 | --- | --- |
 | Python | 3.13 / 3.14（本机 3.14） |
 | numpy | **≥ 2.1**（1.26.x 不支持 Py3.13+，网传 MINGW 构建会 `import` 直接崩溃） |
-| 运行依赖 | fastapi、uvicorn、litemapy、pillow、numpy、python-multipart |
-| 打包依赖 | pyinstaller |
+| 运行依赖 | 见 `requirements.txt`（`pip install -r requirements.txt`） |
+| 打包依赖 | 见 `requirements-dev.txt`（pyinstaller，`pip install -r requirements-dev.txt`） |
 | 可选工具链 | MinGW-w64 g++（只用于重编 C++ 核心） |
 
 检查：`python -c "import numpy; print(numpy.__version__)"`

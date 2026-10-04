@@ -1,0 +1,10 @@
+# 运行依赖 —— 用 `pip install -r requirements.txt` 安装
+# 版本号为「本机已验证可用」的下界，向上兼容。
+
+fastapi>=0.141.1
+uvicorn>=0.53.0
+litemapy>=0.11.0b0
+nbtlib>=2.0.4
+pillow>=12.3.0
+numpy>=2.1            # 关键：numpy 1.26.x 在 Python 3.13+ 上 import 即崩溃
+python-multipart>=0.0.32

@@ -1,5 +1,10 @@
 # Pictomapart · 地图画工具箱
 
+> **Pictomapart** — a local web tool for Minecraft map-art: convert images to 2D
+> map-art `.litematic` schematics (live preview, dithering, local noise repair,
+> global undo), slice schematics to map-sized pieces, and batch-edit Glow Lichen
+> faces. Runs entirely on `127.0.0.1`. Chinese UI.
+
 把 Minecraft 地图画相关的三件事打包成一个**本地网页工具**：
 上传图片就能实时预览、点击放大、导出投影文件。
 
@@ -427,3 +432,10 @@ python tools\check_icons.py       # 自检：坐标无重复无越界、每格�
 
 **关了网页程序还在跑**：页面全关后要等约 15 秒才退出（容忍刷新和短暂重连）。
 不想让它自动退出，就去「设置」里关掉「关闭页面后自动退出」。
+
+---
+
+## 许可证
+
+本项目使用 [MIT License](LICENSE) 开源，欢迎自由使用、修改与分发。
+参与开发请先看 [CONTRIBUTING.md](CONTRIBUTING.md)，日常维护见 [docs/MAINTENANCE.md](docs/MAINTENANCE.md)。
