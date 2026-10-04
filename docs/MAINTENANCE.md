@@ -144,7 +144,7 @@ git clean -fdX          :: 真清（只清被忽略的可再生物，不碰 trac
 打包脚本会把它带进程序名、`使用说明.txt` 和 zip 文件名。
 
 ```bat
-1. 改版本号       编辑 src\maptool\__init__.py 的 __version__（如 "1.36"）
+1. 改版本号       编辑 src\maptool\__init__.py 的 __version__（如 "1.37"）
 2. 跑完整回归     python tests\regression_check.py 等（见 §3.3）
 3. 打包前检查     python tools\build.py --check
 4. 打包           python tools\build.py            :: 产出 dist\YaniNeko_MCmapart_tool\ + zip
@@ -159,6 +159,9 @@ git clean -fdX          :: 真清（只清被忽略的可再生物，不碰 trac
   搜索索引器占住几秒，删不掉也改不了名，脚本会自动写成 `<名字>_<版本>_new.zip`
   并只警告不失败。等占用方松手再重跑一次就回到正常文件名。
 - 交付物是那个**目录**，zip 只是打包形式。
+- 多文件（onedir）版用 `python tools\build_onedir.py`：额外产出
+  `dist\YaniNeko_MCmapart_tool_onedir\` 和 `YaniNeko_MCmapart_tool_v<版本>_onedir.zip`，
+  启动更快，但文件多、要整个目录一起发。
 
 ---
 

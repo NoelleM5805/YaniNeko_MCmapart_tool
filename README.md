@@ -257,7 +257,7 @@ python tools\build_native.py --check
 │  ├─ YaniNeko_MCmapart_tool/
 │  │  ├─ YaniNeko_MCmapart_tool.exe
 │  │  └─ 使用说明.txt
-│  └─ YaniNeko_MCmapart_tool_v1.35.zip
+│  └─ YaniNeko_MCmapart_tool_v1.37.zip
 │
 └─ legacy/                   ← 历史版本留档，不参与构建
    ├─ MCmapart_tool/         解耦前的单文件版（后端 + 前端 + 开发脚本）
@@ -289,8 +289,12 @@ dist/
 ├─ YaniNeko_MCmapart_tool/                 ← 发行版目录，可以整个拷给别人
 │  ├─ YaniNeko_MCmapart_tool.exe
 │  └─ 使用说明.txt
-└─ YaniNeko_MCmapart_tool_v1.35.zip        ← 上面那个目录打的包
+└─ YaniNeko_MCmapart_tool_v1.37.zip        ← 上面那个目录打的包
 ```
+
+多文件（onedir）版：`python tools\build_onedir.py` 会额外产出
+`dist\YaniNeko_MCmapart_tool_onedir\` 和 `YaniNeko_MCmapart_tool_v<版本>_onedir.zip`，
+启动更快（不用每次解包到临时目录），但文件多、要整个目录一起发。
 
 打包脚本会做的事：检查资源是否齐全、**关掉正在运行的旧 exe**（不然文件被占用
 没法覆盖）、跑 PyInstaller（日志只显示 WARNING/ERROR，不然满屏 INFO 看着像失败）、
