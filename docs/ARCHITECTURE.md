@@ -12,7 +12,7 @@
 | 前端 | `index.html` 单文件 **3793 行 / 144 KB**（CSS + JS 全内联） | `web/index.html`（544 行）+ `css/style.css`（1482 行）+ `js/*.js` **13 个文件** |
 | 数据 | 与源码混在同一目录 | `src/maptool/data/`（生成物，独立） |
 | 开发脚本 | 和源码混在一起 | `tools/` |
-| 发行版 | `maptool/` 与源码平级 | `dist/maptool/`，唯一输出目录 |
+| 发行版 | `maptool/` 与源码平级 | `dist/YaniNeko_MCmapart_tool/`，唯一输出目录 |
 | 旧版 | 无处安放 | `legacy/` 留档 |
 
 **行为零变化**：后端 18 项 API 等价性测试、前端 23 项拆分验证全部通过。
@@ -50,7 +50,7 @@
   ├─ keepalive    页面保活（SSE 长连接 + 无页面自动退出）
   ├─ tasks        任务表、日志、结果图缓存
     │
-  webapp          FastAPI 路由（19 条）
+  webapp          FastAPI 路由（22 条）
     │
   runtime         Windows 下的控制台 / 异常兜底
     │

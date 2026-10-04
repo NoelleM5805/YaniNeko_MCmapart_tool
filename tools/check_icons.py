@@ -29,7 +29,24 @@ from maptool.data import blockdata as bd
 import gen_blockdata as G                               # 同目录的开发脚本
 
 
+def _fix_console():
+    """
+    控制台编码兜底：中文 Windows 的默认代码页是 GBK，而本脚本要打印的
+    ✓ ✗ 不在 GBK 里，print 到一半会抛 UnicodeEncodeError 把整次自检带崩
+    （现象是「逐格比对」都跑完了、最后打印汇总时崩）。这里把编码错误降级为
+    替换字符，和 src/maptool/runtime.py 里对运行时控制台的处理一致。
+    """
+    for name in ("stdout", "stderr"):
+        st = getattr(sys, name, None)
+        try:
+            if st is not None:
+                st.reconfigure(errors="replace")
+        except Exception:
+            pass
+
+
 def main():
+    _fix_console()
     SIZE, COLS, ROWS = bd.ICON_SIZE, bd.ICON_COLS, bd.ICON_ROWS
     rows = bd.BLOCK_ROWS
     problems = []

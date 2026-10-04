@@ -232,11 +232,11 @@ python tools\build_native.py --check
 ├─ tests/                    ← 回归测试
 │  ├─ regression_check.py    后端：新旧 API 等价性（13 项）
 │  ├─ web_split_check.py     前端：拆分等价性 + 实测渲染（30 项）
-│  ├─ slice_check.py         投影切分：逐方块映射 / 序列化字节等价（38 项）
+│  ├─ slice_check.py         投影切分：逐方块映射 / 序列化字节等价（40 项）
 │  ├─ slice_web_check.py     投影切分：浏览器端实测（32 项）
 │  ├─ native_match_equiv.py  C++/numpy 匹配器：全 1677 万种颜色逐位比对
 │  ├─ dither_native_equiv.py C++/Python 抖动：端到端逐像素比对（900 例）
-│  ├─ repair_check.py        局部噪点修正：功能与不变量（44 项）
+│  ├─ repair_check.py        局部噪点修正：功能与不变量（55 项）
 │  ├─ repair_web_check.py    局部噪点修正 + 全局撤回：浏览器端实测（36 项）
 │  ├─ page_load_check.py     页面加载自检：抓 JS 报错 + 开关修正区的行为
 │  ├─ bench_dither.py        抖动/匹配性能基准
@@ -309,11 +309,11 @@ dist/
 ### 方式一：直接用发行版（推荐给使用者）
 
 ```
-dist\maptool\Pictomapart.exe
+dist\YaniNeko_MCmapart_tool\YaniNeko_MCmapart_tool.exe
 ```
 
 双击即可，浏览器会自动打开 `http://127.0.0.1:8765`。
-详细说明见 `dist/maptool/使用说明.txt`。
+详细说明见 `dist/YaniNeko_MCmapart_tool/使用说明.txt`。
 
 ### 方式二：从源码跑（推荐给改代码）
 
@@ -341,7 +341,7 @@ python src\run_maptool.py
 
 ```bat
 pip install pyinstaller
-python tools\build.py            # 产出 dist\maptool\Pictomapart.exe
+python tools\build.py            # 产出 dist\YaniNeko_MCmapart_tool\YaniNeko_MCmapart_tool.exe
 python tools\build.py --check    # 只做打包前检查，不打包
 ```
 
