@@ -33,7 +33,9 @@ android {
 
 chaquopy {
     defaultConfig {
-        version = "3.12"
+        // 用 3.11 而非 3.12：pydantic 1.10.x 在 Python 3.12.4+ 上会因
+        // ForwardRef._evaluate 签名变化崩溃（recursive_guard），3.11 原生兼容。
+        version = "3.11"
         pip {
             // 注意：numpy 必须 >= 2.1（见 README，针对 Python 3.13+）；Chaquopy 用
             // Python 3.12，仓库里是 numpy 1.26.2，功能兼容。

@@ -101,6 +101,8 @@ gradlew bundleRelease          :: 上架用 AAB（需先配签名）
 | Gradle 官方源被墙 | 用腾讯镜像下 `gradle-8.7-bin.zip`，解压后用其 `bin\gradle.bat`（`JAVA_HOME` 指向 JDK 17） |
 | pip 访问 pypi/chaquo.com 报 SSL 证书校验失败（Steam++ 代理 MITM） | `app/build.gradle` 里 `pip { options "--trusted-host", ... }` |
 | fastapi 0.142 强制 pydantic v2 → pydantic-core（Rust）无安卓轮子 | 退回 `fastapi==0.115.6` + `pydantic==1.10.15`（纯 Python，本后端不用 pydantic 模型） |
+| pydantic 1.10 在 Python 3.12.4+ 崩溃（`ForwardRef._evaluate` 多了 `recursive_guard`） | Chaquopy `version = "3.11"`（pydantic 1.10 在 3.11 原生兼容） |
+| **切换 Python 版本后**打包的仍是旧版原生扩展（cp312 轮子） | **先 `gradle clean` 再重编**，否则 `requirements-*.imy` 里的 numpy/PIL 原生库还是旧 ABI |
 | `kotlin-stdlib` 1.8.22 与传递依赖的 `jdk7/jdk8` 1.6.21 重复类 | `configurations.configureEach` 强制统一到 1.8.22 |
 
 构建命令（本机）：
@@ -120,3 +122,15 @@ D:\gradle-8.7\bin\gradle.bat assembleDebug
 > 注意：当前 APK 只编了 `arm64-v8a`（真机主流）。本机 SDK 里的模拟器系统镜像是
 > x86_64，跑这个 arm64 APK 需要 ARM 转译、较慢；如要用 x86_64 模拟器，请在
 > `app/build.gradle` 的 `abiFilters` 里加 `"x86_64"` 后重编。
+
+## 模拟器实测（MuMu 12 · Android 15 · arm64 转译）
+
+已用 **MuMu Player 12**（adb `127.0.0.1:16384`）实机验证通过：
+
+- 后端在进程内正常启动，`√ 服务器就绪：http://127.0.0.1:8765`
+- `GET /api/palette` → 200（290 方块，与桌面一致）
+- 上传图片 → 预览（加权 RGB + Floyd 抖动）→ 生成 `.litematic` 全链路 200
+- `native.available=False`（C++ 核心退回纯 Python，符合预期）
+
+> MuMu 的 ARM 转译会缓存原生库；换 ABI/Python 版本后若报 `dlopen libpython3.X.so not found`，
+> 先卸载重装、必要时重启模拟器清除转译缓存。
