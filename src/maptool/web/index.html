@@ -627,6 +627,49 @@
                 </div>
 
             </div>
+
+            <!-- ================= 铺设顺序优化 ================= -->
+            <div class="section sl-order" id="sl-order-sec">
+                <label class="s-label">铺设顺序优化（可选）</label>
+                <div class="s-hint">
+                    把切好的若干块（或任意一批同样大小的投影）排成一个顺序，
+                    让「上一块改到下一块」的总替换次数最少。阈值 8000 只用来标
+                    出替换过多的步骤，不影响优化目标。
+                </div>
+
+                <div class="sl-order-actions">
+                    <button class="btn-primary" id="sl-order-run" disabled>
+                        ▶ 对切分结果排顺序
+                    </button>
+                    <label class="sl-radio sl-order-th">
+                        <span>告警阈值</span>
+                        <input type="number" id="sl-order-threshold" value="8000" min="0" step="500">
+                    </label>
+                    <button class="btn-success" id="sl-order-save" hidden>
+                        ⬇ 保存顺序 txt
+                    </button>
+                </div>
+
+                <div class="sl-order-or">
+                    <span>或者</span>
+                </div>
+
+                <div class="drop-zone sl-order-drop" id="sl-order-drop">
+                    <input type="file" hidden accept=".litematic" id="sl-order-files" multiple>
+                    <div class="drop-icon">🧩</div>
+                    <div class="drop-title">上传任意张同样大小的投影，直接排顺序</div>
+                    <div class="drop-sub">可多选；按选择顺序编号为块 0、块 1……</div>
+                </div>
+                <div class="sl-order-picked" id="sl-order-picked" hidden></div>
+
+                <div class="sl-order-out" id="sl-order-out" hidden>
+                    <div class="sl-summary" id="sl-order-summary"></div>
+                    <div class="sl-order-seq" id="sl-order-seq"></div>
+                    <div class="sl-order-steps" id="sl-order-steps"></div>
+                </div>
+
+                <div class="log mt-8" id="sl-order-log" hidden></div>
+            </div>
         </div>
 
         <div class="tab-panel" data-panel="lichen">
@@ -684,10 +727,10 @@
                     <div class="section">
                         <label class="s-label">1. 上传投影文件</label>
                         <div class="drop-zone" id="pr-drop">
-                            <input type="file" hidden accept=".litematic" id="pr-file">
+                            <input type="file" hidden accept=".litematic,.bnt,.nbt" id="pr-file">
                             <div class="drop-icon">🧹</div>
-                            <div class="drop-title">点击选择 .litematic，或拖到这里</div>
-                            <div class="drop-sub">输入和输出都是投影文件</div>
+                            <div class="drop-title">点击选择 .litematic / .bnt / .nbt，或拖到这里</div>
+                            <div class="drop-sub">支持 .litematic、结构 NBT(.bnt/.nbt)；输出 .litematic</div>
                             <div class="file-info" id="pr-file-info" hidden>
                                 <span class="file-name" id="pr-file-name"></span>
                                 <span class="file-size" id="pr-file-size"></span>

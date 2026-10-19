@@ -3429,3 +3429,271 @@ body.focus-mode .preview-box canvas.pixel-canvas {
     transform-origin: center center;
     will-change: transform;
 }
+
+/* ============================================================
+   20. 铺设顺序优化（切分页下半部分）
+   ============================================================ */
+.sl-order {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+
+.sl-order-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.sl-order-th {
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.sl-order-th input {
+    width: 84px;
+}
+
+.sl-order-or {
+    position: relative;
+    margin: 16px 0 12px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--faint);
+}
+
+.sl-order-or::before,
+.sl-order-or::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: calc(50% - 26px);
+    border-top: 1px solid var(--border);
+}
+
+.sl-order-or::before { left: 0; }
+.sl-order-or::after { right: 0; }
+
+.sl-order-drop {
+    padding: 18px 16px;
+}
+
+/* 已选文件：明确标出「块索引 → 文件名」，否则顺序里的数字对不上文件 */
+.sl-order-picked {
+    margin-top: 10px;
+    padding: 8px 10px;
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+}
+
+.sl-order-picked-head {
+    margin-bottom: 6px;
+    font-size: 11.5px;
+    color: var(--muted);
+}
+
+.sl-order-picked-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 11.5px;
+    color: var(--text);
+}
+
+.sl-order-idx {
+    flex: 0 0 auto;
+    min-width: 26px;
+    padding: 1px 5px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--on-accent);
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.sl-order-fname {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+
+.sl-order-fsize {
+    flex: 0 0 auto;
+    color: var(--faint);
+}
+
+/* 结果区 */
+.sl-order-out {
+    margin-top: 14px;
+}
+
+.sl-order-seq {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 9px 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+}
+
+.sl-order-seq-label {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    color: var(--muted);
+}
+
+.sl-order-seq-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.sl-order-node {
+    padding: 1px 7px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line-soft);
+    border-radius: 2px;
+}
+
+.sl-order-arrow {
+    font-size: 11px;
+    color: var(--faint);
+}
+
+.sl-order-steps {
+    margin-top: 10px;
+}
+
+.sl-order-ok {
+    padding: 9px 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--ok-text);
+    background: var(--ok-soft);
+    border: 1px solid var(--ok-line);
+    border-radius: var(--r);
+}
+
+.sl-order-warn-title {
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--warn-text);
+}
+
+/* 逐步明细表：每一步都列出来，超阈值的行整行标色 */
+.sl-step-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    overflow: hidden;
+}
+
+.sl-step-head,
+.sl-step-row {
+    display: grid;
+    grid-template-columns: 56px 76px 120px 120px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 5px 10px;
+}
+
+.sl-step-head {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    color: var(--muted);
+    background: var(--soft);
+    border-bottom: 1px solid var(--border);
+}
+
+.sl-step-body {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.sl-step-row {
+    font-size: 11.5px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+}
+
+.sl-step-row:last-child {
+    border-bottom: 0;
+}
+
+.sl-step-row:nth-child(even) {
+    background: var(--panel-2);
+}
+
+.sl-step-row.is-over {
+    background: var(--run-soft);
+    box-shadow: inset 3px 0 0 var(--run-line);
+}
+
+.sl-step-row .c-step,
+.sl-step-row .c-block {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+.sl-step-row.is-over .c-step {
+    color: var(--warn-text);
+}
+
+.sl-step-row .c-num {
+    font-family: var(--font-mono);
+    text-align: right;
+    color: var(--text-strong);
+}
+
+.sl-step-row .c-note {
+    min-width: 0;
+    font-size: 11px;
+    color: var(--warn-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sl-step-head .c-num {
+    text-align: right;
+}
+
+.sl-step-foot {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    color: var(--muted);
+    background: var(--soft);
+    border-top: 1px solid var(--border);
+}
+
+.sl-step-foot b {
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+}

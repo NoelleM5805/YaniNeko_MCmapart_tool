@@ -417,6 +417,7 @@
                         `将保存 ${SL.files.length} 个文件：${SL.files.slice(0, 3).map(f => f.name).join("、")}`
                         + (SL.files.length > 3 ? " …" : "");
                     $("sl-save-sec").hidden = false;
+                    soRefreshAvailability();
                 });
             } catch (e) {
                 btn.disabled = false;
@@ -539,3 +540,255 @@
 
         // 页面初始化时把模式收起来
         slSetMode("auto");
+
+        // ============================================================
+        // 铺设顺序优化
+        // ============================================================
+        // 把切好的块（或任意一批同样大小的投影）排成一条总替换次数最少的
+        // 铺设顺序，并导出可直接施工的 txt。
+        const SO = { taskId: null, files: [], busy: false };
+
+        function soThreshold() {
+            const v = parseInt($("sl-order-threshold").value, 10);
+            if (!isFinite(v) || v < 0) return 8000;
+            return Math.min(v, 1e9);
+        }
+
+        function soLog(msg) {
+            const el = $("sl-order-log");
+            el.hidden = false;
+            el.textContent = msg;
+        }
+
+        /** 切分完成后才允许「对切分结果排顺序」 */
+        function soRefreshAvailability() {
+            const btn = $("sl-order-run");
+            btn.disabled = !(SL.taskId && SL.files && SL.files.length);
+            btn.textContent = SL.files && SL.files.length
+                ? `▶ 对切分结果排顺序（${SL.files.length} 块）`
+                : "▶ 对切分结果排顺序";
+        }
+
+        $("sl-order-run").addEventListener("click", async () => {
+            if (!SL.taskId) { alert("请先完成一次切分"); return; }
+            if (SO.busy) return;
+            const fd = new FormData();
+            fd.append("tid", SL.taskId);
+            fd.append("threshold", soThreshold());
+            await soStart("/api/order/from-slice", fd, "正在读取切分结果…");
+        });
+
+        /**
+         * 自由上传：不走切分，直接拿一批同样大小的投影排顺序。
+         *
+         * 块编号 = 文件在列表里的顺序（第 1 个 = 块 0）。这件事必须让用户
+         * 看得见 —— 顺序里写的是块索引，对不上文件就没法施工。
+         */
+        function soPickFiles(files) {
+            SO.files = Array.from(files || []);
+            const box = $("sl-order-picked");
+            if (!SO.files.length) { box.hidden = true; return; }
+            box.hidden = false;
+            const head = `<div class="sl-order-picked-head">已选 ${SO.files.length} 个文件，`
+                + `按下面的编号排（块索引 → 文件名）：</div>`;
+            const rows = SO.files.map((f, i) =>
+                `<div class="sl-order-picked-row">`
+                + `<span class="sl-order-idx">${i}</span>`
+                + `<span class="sl-order-fname">${slEsc(f.name)}</span>`
+                + `<span class="sl-order-fsize">${formatSize(f.size)}</span>`
+                + `</div>`).join("");
+            box.innerHTML = head + rows;
+            soRefreshUploadButton();
+        }
+
+        function slEsc(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;",
+                '"': "&quot;", "'": "&#39;"
+            })[c]);
+        }
+
+        function soRefreshUploadButton() {
+            if (!SO.files.length) return;
+            soUpload(SO.files);
+        }
+
+        async function soUpload(files) {
+            if (SO.busy || !files.length) return;
+            const fd = new FormData();
+            for (const f of files) fd.append("files", f);
+            fd.append("threshold", soThreshold());
+            await soStart("/api/order/upload", fd,
+                          `正在上传并读取 ${files.length} 个投影…`);
+        }
+
+        // 多选 / 拖放
+        const soDrop = $("sl-order-drop");
+        const soInput = $("sl-order-files");
+        soDrop.addEventListener("click", (e) => {
+            if (e.target.closest(".sl-order-picked")) return;
+            soInput.click();
+        });
+        soInput.addEventListener("change", () => {
+            soPickFiles(soInput.files);
+        });
+        ["dragenter", "dragover"].forEach(ev => {
+            soDrop.addEventListener(ev, e => {
+                e.preventDefault(); e.stopPropagation();
+                soDrop.classList.add("drag-over");
+            });
+        });
+        ["dragleave", "drop"].forEach(ev => {
+            soDrop.addEventListener(ev, e => {
+                e.preventDefault(); e.stopPropagation();
+                soDrop.classList.remove("drag-over");
+            });
+        });
+        soDrop.addEventListener("drop", e => {
+            const fs = Array.from(e.dataTransfer.files || [])
+                .filter(f => /\.litematic$/i.test(f.name));
+            if (!fs.length) { alert("请拖入 .litematic 投影文件"); return; }
+            soPickFiles(fs);
+        });
+
+        /** 发起一次排序任务并轮询 */
+        async function soStart(url, fd, pendingMsg) {
+            SO.busy = true;
+            $("sl-order-save").hidden = true;
+            $("sl-order-out").hidden = true;
+            $("sl-order-run").disabled = true;
+            soLog(pendingMsg);
+            setStatus("正在计算铺设顺序…");
+            setBadge("排序中", "running");
+            try {
+                const res = await fetch(url, { method: "POST", body: fd });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "启动失败");
+                SO.taskId = data.task_id;
+                pollTask(data.task_id, $("sl-order-log"), (st) => {
+                    soFinish(st);
+                });
+            } catch (e) {
+                SO.busy = false;
+                $("sl-order-run").disabled = false;
+                soLog("失败：" + e.message);
+                setStatus("排序失败：" + e.message);
+                setBadge("失败", "err");
+            }
+        }
+
+        function soFinish(st) {
+            SO.busy = false;
+            soRefreshAvailability();
+            if (st.error) {
+                setStatus("排序失败");
+                setBadge("失败", "err");
+                soLog("失败：" + st.error);
+                return;
+            }
+            const r = st.result || {};
+            SL.order = r;
+
+            const sum = $("sl-order-summary");
+            sum.innerHTML =
+                `<span class="sl-chip">共 <b>${r.count}</b> 块</span>`
+                + `<span class="sl-chip">每块 <b>${r.sx}×${r.sz}</b></span>`
+                + `<span class="sl-chip">最小总替换 <b>${r.total.toLocaleString()}</b></span>`
+                + `<span class="sl-chip">方块 <b>${r.palette}</b> 种</span>`
+                + `<span class="sl-chip">超阈值 <b>${(r.high || []).length}</b> 步</span>`;
+
+            const seq = $("sl-order-seq");
+            seq.innerHTML = `<span class="sl-order-seq-label">铺设顺序</span>`
+                + `<span class="sl-order-seq-body">`
+                + r.order.map((v, i) =>
+                    `<span class="sl-order-node">${v}</span>`
+                    + (i < r.order.length - 1
+                        ? `<span class="sl-order-arrow">→</span>` : ""))
+                    .join("")
+                + `</span>`;
+
+            // 逐步明细：**每一步都列**，不只是超阈值的那些。
+            // 表格和导出 txt 的内容是同一份，所以界面上看到的和 txt 完全一致。
+            const steps = $("sl-order-steps");
+            const rows = r.rows || [];
+            const high = r.high || [];
+            const head = high.length
+                ? `<div class="sl-order-warn-title">⚠️ 有 ${high.length} 步超过 `
+                  + `${r.threshold}（下表里已标出）</div>`
+                : `<div class="sl-order-ok">✅ 没有任何一步超过 ${r.threshold}，`
+                  + `铺设顺序平稳。</div>`;
+
+            const body = rows.map(row => {
+                const note = row.over
+                    ? (row.step === 1
+                        ? `⚠️ 首块非空气格 ${row.replaced} > ${r.threshold}`
+                        : `⚠️ 单步替换 ${row.replaced} > ${r.threshold}`
+                          + `（块${row.prev} → 块${row.block}）`)
+                    : "";
+                return `<div class="sl-step-row${row.over ? " is-over" : ""}">`
+                    + `<span class="c-step">${row.step}</span>`
+                    + `<span class="c-block">${row.block}</span>`
+                    + `<span class="c-num">${row.replaced.toLocaleString()}</span>`
+                    + `<span class="c-num">${row.cum.toLocaleString()}</span>`
+                    + `<span class="c-note">${note}</span>`
+                    + `</div>`;
+            }).join("");
+
+            steps.innerHTML = head
+                + `<div class="sl-step-wrap">`
+                + `<div class="sl-step-head">`
+                + `<span class="c-step">步</span>`
+                + `<span class="c-block">块索引</span>`
+                + `<span class="c-num">本步替换</span>`
+                + `<span class="c-num">累计</span>`
+                + `<span class="c-note">备注</span>`
+                + `</div>`
+                + `<div class="sl-step-body">${body}</div>`
+                + `<div class="sl-step-foot">`
+                + `共 ${rows.length} 步，总替换次数 `
+                + `<b>${r.total.toLocaleString()}</b>`
+                + `</div>`
+                + `</div>`;
+
+            $("sl-order-out").hidden = false;
+            $("sl-order-save").hidden = false;
+            setStatus(`顺序已生成：${r.count} 块，最小总替换 ${r.total.toLocaleString()}`);
+            setBadge(`${r.count} 块 · 顺序就绪`, "ok");
+        }
+
+        $("sl-order-save").addEventListener("click", () => {
+            if (!SO.taskId || !SL.order) { alert("请先生成铺设顺序"); return; }
+            const a = document.createElement("a");
+            a.href = `/api/order/txt/${SO.taskId}`;
+            a.download = SL.order.txt_name || "投影铺设顺序.txt";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setStatus("已开始下载顺序 txt");
+        });
+
+        // 阈值只影响 ⚠️ 标注，不影响顺序和成本 —— 所以改阈值时不重新求解，
+        // 让服务端拿缓存的距离矩阵重渲染一遍 txt（秒回，也不用重传文件）。
+        $("sl-order-threshold").addEventListener("change", async () => {
+            if (!SO.taskId || !SL.order || SO.busy) return;
+            const body = new URLSearchParams();
+            body.append("tid", SO.taskId);
+            body.append("threshold", soThreshold());
+            try {
+                const res = await fetch("/api/order/threshold", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body,
+                });
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.msg || "重算失败");
+                soFinish({ result: data });
+                soLog(`阈值已改为 ${data.threshold}：顺序和总成本不变，`
+                      + `只有 ⚠️ 标注变化。`);
+            } catch (e) {
+                soLog("改阈值失败：" + e.message);
+            }
+        });
+
+        soRefreshAvailability();
+

@@ -14,6 +14,7 @@
 | 🎨 地图画生成 | 图片 → 2D 地图画 `.litematic`。调参实时预览、点击放大、方块用量统计、导出的文件名默认跟图片同名 |
 | 🩹 局部噪点修正 | 锁一种「受害者方块」→ 圈选区 → 按按钮才改。只动锁定那一种颜色，选区里其它内容不碰 |
 | ✂️ 投影切分 | 上传 `.litematic` 后**自动按投影尺寸推荐**切法（每块 ≤128×128 = 一张地图），带逐像素切割预览；输出多个独立投影文件（不打包成 zip） |
+| 🧭 铺设顺序 | 把切好的块（或任意一批同样大小的投影）排成总替换次数最少的铺设顺序，导出可施工的 txt |
 | 🧹 投影噪点修改 | 直接上传 `.litematic`，在投影俯视图上使用降噪/填充/还原/画笔，导出修改后的投影文件 |
 | 🌿 Glow Lichen | 批量修改发光地衣的六面朝向属性 |
 | ↩️ 全局撤回 | 最多 20 步，覆盖噪点修正 / 方块选择 / 图片调整 / 算法与尺寸
@@ -167,6 +168,52 @@
 
 ---
 
+## 铺设顺序怎么用
+
+切完之后，这些 128×128 的块要一块一块铺进世界。**铺的先后顺序会决定总
+替换次数**：上一块和下一块差得越多，要拆了重放的格子就越多。这一节算的就是
+「怎么排能让总替换次数最少」。
+
+有两种用法，都在切分页的下半部分：
+
+| 用法 | 说明 |
+| --- | --- |
+| 对切分结果排顺序 | 刚切完直接点按钮，不用再上传一遍 |
+| 上传任意投影 | 拖一批同样大小的 `.litematic` 进来，按选择顺序编号为块 0、块 1…… |
+
+**替换次数怎么算**：上一块和下一块在同样位置、方块 ID 不同的格子数（汉明距离）。
+从空地铺首块时，首块的所有非空气格都要放，所以「首块成本 = 非空气格数」。
+
+**求解方式**：
+
+| 块数 | 算法 |
+| --- | --- |
+| ≤ 15 | 状压 DP（Held-Karp），**精确最优** |
+| > 15 | 多起点贪心最近邻 → 2-opt → Or-opt（≤100 块时） |
+
+**8000 阈值只是告警**：一个 128×128 块有 16384 格，8000 约等于一半。某一步
+超过它就在表里标 ⚠️，提醒你这刀要重铺一大半。它**不影响优化目标** ——
+总替换次数始终只最小化，不会为了压低单步最大值而牺牲总成本。改阈值只重排
+标注（服务端拿缓存的距离矩阵重渲染，秒回），顺序和总成本**一个数都不会变**。
+
+**逐步明细**：界面上和 txt 里都是**每一步都列**，不是只列告警的那几步 ——
+步 / 块索引 / 本步替换 / 累计 / 备注，超阈值的行整行标色。表尾给出总步数和
+总替换次数。
+
+**导出的 txt** 包含：块索引 → 文件名对照表、铺设顺序、逐步明细（本步替换 /
+累计 / 备注）、高替换步骤汇总。文件可以直接拿去对着施工。几个细节：
+
+- 自由上传时**块索引 = 文件的选择顺序**（第 1 个是块 0），界面上会把对应
+  关系列出来，免得分不清
+- 所有投影**必须同样大小**，尺寸不一致直接报错 —— 不做缩放，缩放会凭空
+  造出替换次数
+- 不同文件里的同一个方块会被统一编号，所以「内容完全相同的两份投影」距离是 0
+
+> 实现在 `src/maptool/ordering.py`（纯算法，只依赖 numpy）+ `projection_order.py`
+> （读投影、出 txt）。
+
+---
+
 ## C++ 抖动核心
 
 误差扩散的内层循环和颜色匹配在 `src/maptool/native/dither_core.cpp` 里，
@@ -220,6 +267,8 @@ python tools\build_native.py --check
 │     ├─ adjustments.py      12 项图像调整
 │     ├─ schematic.py        .litematic 构建与方块分配
 │     ├─ slicing.py          投影切分
+│     ├─ ordering.py         铺设顺序优化（TSP：状压 DP / 贪心 + 2-opt + Or-opt）
+│     ├─ projection_order.py 投影 → 方格 → 顺序 → txt（切分页用的桥接层）
 │     ├─ lichen.py           发光地衣面属性
 │     ├─ webapp.py           FastAPI 路由
 │     ├─ native/             C++ 抖动核心（dither_core.cpp + 编译出的 DLL）
@@ -240,7 +289,9 @@ python tools\build_native.py --check
 │  ├─ regression_check.py    后端：新旧 API 等价性（13 项）
 │  ├─ web_split_check.py     前端：拆分等价性 + 实测渲染（30 项）
 │  ├─ slice_check.py         投影切分：逐方块映射 / 序列化字节等价（40 项）
-│  ├─ slice_web_check.py     投影切分：浏览器端实测（32 项）
+│  ├─ slice_web_check.py     投影切分：浏览器端实测（54 项，含铺设顺序）
+│  ├─ ordering_check.py      铺设顺序算法：穷举对拍（69 项）
+│  ├─ projection_order_check.py  投影→网格→txt 桥接层（52 项）
 │  ├─ native_match_equiv.py  C++/numpy 匹配器：全 1677 万种颜色逐位比对
 │  ├─ dither_native_equiv.py C++/Python 抖动：端到端逐像素比对（900 例）
 │  ├─ repair_check.py        局部噪点修正：功能与不变量（55 项）
@@ -366,7 +417,9 @@ python tools\build.py --check    # 只做打包前检查，不打包
 python tests\regression_check.py     # 后端：同一套请求打两个服务，比对响应
 python tests\web_split_check.py      # 前端：token 级比对 + 无头浏览器渲染比对
 python tests\slice_check.py          # 投影切分：逐方块映射 + 序列化字节等价
-python tests\slice_web_check.py      # 投影切分：浏览器端完整流程
+python tests\slice_web_check.py      # 投影切分 + 铺设顺序：浏览器端完整流程
+python tests\ordering_check.py       # 铺设顺序算法：和全排列穷举对拍
+python tests\projection_order_check.py  # 投影→网格→txt 桥接层
 python tests\native_match_equiv.py   # C++ 匹配器：全 1677 万种颜色逐位比对
 python tests\dither_native_equiv.py  # C++ 抖动：900 例端到端逐像素比对
 python tests\repair_check.py         # 局部噪点修正：功能与不变量

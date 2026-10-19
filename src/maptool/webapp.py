@@ -30,6 +30,8 @@ from .lichen import do_glow_lichen
 from .projection_repair import (apply_ops_preview, parse_ops, preview_payload,
                                 process_projection)
 from .slicing import MAP_SIZE, do_slice, preview_slice
+from .ordering import THRESHOLD as ORDER_THRESHOLD
+from .projection_order import order_projections, render_order
 from .tasks import (add_log, cache_get_image, cache_get_slice, cache_put_image,
                     cache_put_slice, create_task, finish_task)
 
@@ -727,6 +729,173 @@ def api_slice_zip(tid: str):
             "Cache-Control": "no-store",
         },
     )
+
+
+# ------------------------------------------------------------
+# 铺设顺序优化（ordering）
+# ------------------------------------------------------------
+def _order_worker(tid, items, threshold, source):
+    """把「读投影 → 求顺序 → 出 txt」丢进后台线程跑，日志实时可见。"""
+    def worker():
+        task = TASKS[tid]
+        try:
+            add_log(task, "共 %d 个投影，阈值 %d" % (len(items), threshold))
+            add_log(task, "正在读取投影…")
+            t0 = time.time()
+            res, ctx = order_projections(items, threshold=threshold,
+                                         source=source, verbose=False)
+            add_log(task, "读取 + 求解完成，用时 %.2fs" % (time.time() - t0))
+            add_log(task, "块数 %d，每块 %d×%d，方块 %d 种"
+                    % (res["count"], res["sx"], res["sz"], res["palette"]))
+            add_log(task, res["method"])
+            add_log(task, "最小总替换次数 = %d" % res["total"])
+            add_log(task, "铺设顺序：%s" % res["order_text"])
+            if res["high"]:
+                add_log(task, "⚠️ 有 %d 步超过 %d"
+                        % (len(res["high"]), threshold))
+            else:
+                add_log(task, "✅ 没有任何一步超过 %d" % threshold)
+            _store_order(task, res, ctx)
+        except Exception as e:
+            task["error"] = str(e)
+            add_log(task, "❌ " + str(e))
+            add_log(task, traceback.format_exc())
+        finally:
+            finish_task(tid)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _store_order(task, res, ctx):
+    """结果落进任务：txt 字节给下载，ctx 留着换阈值重渲染。"""
+    task["order_txt"] = res["txt"].encode("utf-8")
+    task["order_ctx"] = ctx
+    task["result_name"] = res["txt_name"]
+    # 全表都要给前端 —— 不是只给超阈值的那几步。N 最多几百，序列化下来
+    # 也就几十 KB；少给一部分只会让用户在界面上看不到自己那块。
+    task["result"] = {
+        "count": res["count"],
+        "sx": res["sx"], "sz": res["sz"], "cells": res["cells"],
+        "palette": res["palette"],
+        "total": res["total"],
+        "order": res["order"],
+        "order_text": res["order_text"],
+        "method": res["method"],
+        "rows": res["rows"],
+        "high": res["high"],
+        "names": res["names"],
+        "threshold": res["threshold"],
+        "txt_name": res["txt_name"],
+        "txt_size": res["txt_size"],
+    }
+
+
+def _parse_threshold(raw):
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return ORDER_THRESHOLD
+    if v < 0:
+        return ORDER_THRESHOLD
+    return min(v, 10 ** 9)
+
+
+@app.post("/api/order/upload")
+async def api_order_upload(
+    files: list[UploadFile] = File(...),
+    threshold: int = Form(ORDER_THRESHOLD),
+):
+    """
+    自由上传任意张（同样尺寸的）投影，直接排铺设顺序。
+
+    多文件按**提交顺序**编号：第 1 个文件是块 0，第 2 个是块 1……
+    """
+    if not files:
+        return JSONResponse({"ok": False, "msg": "没有收到文件"}, status_code=400)
+    items = []
+    for f in files:
+        content = await f.read()
+        if not content:
+            continue
+        items.append((f.filename or "projection.litematic", content))
+    if not items:
+        return JSONResponse({"ok": False, "msg": "文件都是空的"}, status_code=400)
+
+    th = _parse_threshold(threshold)
+    tid = create_task("order")
+    _order_worker(tid, items, th, "上传的 %d 个投影" % len(items))
+    return {"ok": True, "task_id": tid}
+
+
+@app.post("/api/order/from-slice")
+async def api_order_from_slice(
+    tid: str = Form(...),
+    threshold: int = Form(ORDER_THRESHOLD),
+):
+    """用刚切好的那批块排顺序，不用再上传一遍。"""
+    t = TASKS.get(tid)
+    blobs = (t or {}).get("slice_files") or []
+    if not t or not blobs:
+        return JSONResponse({"ok": False, "msg": "切分结果已过期，请重新切分"},
+                            status_code=404)
+    names = []
+    try:
+        names = [f["name"] for f in t["result"]["files"]]
+    except Exception:
+        names = ["slice_%d.litematic" % (i + 1) for i in range(len(blobs))]
+    items = list(zip(names, blobs))
+
+    th = _parse_threshold(threshold)
+    otid = create_task("order")
+    _order_worker(otid, items, th, "切分结果（%d 块）" % len(items))
+    return {"ok": True, "task_id": otid}
+
+
+@app.get("/api/order/txt/{tid}")
+def api_order_txt(tid: str):
+    """下载铺设顺序 txt。"""
+    t = TASKS.get(tid)
+    data = (t or {}).get("order_txt")
+    if not t or not data:
+        return JSONResponse({"ok": False, "msg": "结果文件不存在"}, status_code=404)
+    name = t.get("result_name") or "投影铺设顺序.txt"
+    return Response(
+        content=data,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''%s"
+                                   % quote(name),
+            "Content-Length": str(len(data)),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.post("/api/order/threshold")
+async def api_order_threshold(
+    tid: str = Form(...),
+    threshold: int = Form(ORDER_THRESHOLD),
+):
+    """
+    只改阈值重新标注。
+
+    顺序和总成本都跟阈值无关（阈值只影响 ⚠️ 标注），所以这里**不重新求解**，
+    直接拿任务里存着的距离矩阵和路径重渲染一遍 txt，秒回。
+    """
+    t = TASKS.get(tid)
+    ctx = (t or {}).get("order_ctx")
+    if not t or not ctx:
+        return JSONResponse({"ok": False, "msg": "结果已过期，请重新排序"},
+                            status_code=404)
+    try:
+        res = render_order(ctx, threshold=_parse_threshold(threshold))
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": "重算失败：%s" % e},
+                            status_code=500)
+    _store_order(t, res, ctx)
+    out = dict(t["result"])
+    out["ok"] = True
+    return JSONResponse(out)
 
 
 # ------------------------------------------------------------

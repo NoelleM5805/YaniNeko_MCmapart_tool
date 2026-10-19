@@ -458,8 +458,9 @@ function prResetUI() {
 }
 
 bindDropZone("pr-drop", "pr-file", async (f) => {
-    if (!f.name.toLowerCase().endsWith(".litematic")) {
-        alert("请选择 .litematic 投影文件");
+    const low = f.name.toLowerCase();
+    if (!(low.endsWith(".litematic") || low.endsWith(".bnt") || low.endsWith(".nbt"))) {
+        alert("请选择 .litematic / .bnt / .nbt 投影文件");
         return;
     }
     prResetUI();

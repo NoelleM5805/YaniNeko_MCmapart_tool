@@ -45,12 +45,14 @@
   schematic       .litematic 构建、同色方块分配、字节化、文件名清洗
     │
   ├─ slicing      投影按 N×M 网格切块
+  ├─ ordering     铺设顺序优化（只依赖 numpy，不碰 litematic）
+  ├─ projection_order  slicing 的方块网格 ↔ ordering 的接口 + txt 渲染
   ├─ lichen       发光地衣面属性批量替换
     │
   ├─ keepalive    页面保活（SSE 长连接 + 无页面自动退出）
   ├─ tasks        任务表、日志、结果图缓存
     │
-  webapp          FastAPI 路由（22 条）
+  webapp          FastAPI 路由（24 条，不含 static 和自动生成的 docs）
     │
   runtime         Windows 下的控制台 / 异常兜底
     │
@@ -75,6 +77,8 @@
 | `imageops` | `flatten_image()`（透明图铺背景）、`fit_image()`（stretch/contain/cover）、`recommend_ratios()` 推荐地图比例 |
 | `schematic` | `pick_block_names()` 同色多选时按 `random`/`cycle`/`first` 分配；`count_block_usage()` 统计；`build_mapart_schematic()` 用 `BlockState(id, **props)` 写方块状态；`schem_to_bytes()`、`safe_stem()` / `safe_litematic_name()` |
 | `slicing` | `plan_split()` / `recommend_split()` 算推荐切法（每块 ≤128×128 = 一张地图）；`do_slice()` 切块；`preview_slice()` 出缩略图 + 每块统计。切分走 numpy 切片而不是逐格读写，序列化自己位打包（见下） |
+| `ordering` | 铺设顺序：`build_dist()` 建 (N+1)² 距离矩阵（0 号 = 虚拟空地），`greedy_best()` 多起点贪心、`two_opt()` / `or_opt()` 局部优化、`exact_dp()` 状压 DP 精确解；`render_report()` 出明细表文本。**只依赖 numpy**，不导入 litematic，所以能单独跑（`python src/maptool/ordering.py` 有演示） |
+| `projection_order` | 桥接层：`projection_grid()` 把 `.litematic` 读成 (Z,X) 整数网格；`load_projections()` 跨文件**统一方块编号**；`order_projections()` 串起求解；`render_order()` 用缓存的上下文重渲染 txt（换阈值时不用重算） |
 | `lichen` | `do_glow_lichen()` 与目标方块 ID（`minecraft:glow_lichen`）比对后批量改面属性 |
 | `keepalive` | `KEEPALIVE` 状态 + `_keepalive_watchdog()`；`KEEPALIVE_GRACE=15s`、`KEEPALIVE_TICK=2s`，靠 `armed` 防止没人连过就退出 |
 | `tasks` | `IMAGE_CACHE`（`MAX_IMAGE_CACHE=12`，LRU）、`add_log()` / `create_task()` / `finish_task()`，任务只留最近 `KEEP_TASKS=15` 个 |
@@ -364,6 +368,7 @@ img                服务端渲染的权威结果（含所有已执行操作）
 | 颜色匹配 | 每次调用 10.6 µs | 可分离 float64 距离表；CIE 系列 numpy 向量化 |
 | 误差扩散 | 纯 Python 逐像素、每步做边界判断 | `_diffuse_flat()`：扁平 list + 2 格 padding + 预计算 tap 偏移，不做边界判断 |
 | 投影切分 | 逐格 `Region[lx,ly,lz]` 读 + 逐格 `sub[x,y,z] = blk` 写 | 直接切 `Region.__blocks`（numpy），只对**出现过的**下标建 `BlockState` |
+| 铺设顺序 | —（新增功能） | 距离矩阵按行向量化；2-opt 内层按 `i` 向量化；N≤15 用状压 DP 直接出精确解 |
 | 投影序列化 | `Region.to_nbt()` 里 `for x: for y: for z:` 逐格调 `LitematicaBitArray.__setitem__` | `_pack_longs()` 整个用 numpy 位移向量化，输出逐位一致 |
 | 读写投影 | 上传/输出各落一个临时文件 | nbtlib 本来就吃文件对象，改成 `BytesIO` 内存里做完 |
 
@@ -493,3 +498,85 @@ append」，所以顺序正好是这个。
 「长度 + 首尾 64KB 的 sha1」缓存进 `SLICE_CACHE`（只留最近 6 个），
 切分请求只带这个 key。`/api/slice/process` 仍然接受直接上传文件，
 所以直接调 API 的用法不受影响。
+
+---
+
+## 九、铺设顺序（ordering）为什么这么写
+
+### 这是个什么图
+
+引入**虚拟节点 0 = 空地**，其余节点对应各块：
+
+```
+D[0][i] = D[i][0] = 第 i 块的非空气格数      ← 从空地铺首块，全都要放
+D[i][j] = D[j][i] = 块 i、j 的汉明距离        ← 同位置不同方块 ID 的格数
+```
+
+于是问题 = 在 N+1 个节点的完全图上找一条**从 0 出发、每点恰好访问一次**的
+最小成本路径。路径里 0 是空地，**块索引 = 路径元素 - 1**。
+
+### 距离矩阵：按行算，不要广播
+
+```python
+D[i+1, j+1] = np.count_nonzero(M[j] != M[i])      # M 是 (N, 16384)
+```
+
+写成广播 `M[:, None, :] != M[None, :, :]` 会生成 `N²×16384` 个 bool，
+N=100 就是 1.6 亿字节；按行算峰值只有 `O(N×16384)`。又因为对称，
+只算上三角再左右同写，工作量减半。实测 N=200 建表 0.25 s。
+
+### 算法分工
+
+| 规模 | 算法 | 理由 |
+| --- | --- | --- |
+| N ≤ 15 | 状压 DP（Held-Karp） | 2^15×15² ≈ 740 万次转移，能直接拿**精确最优** |
+| N > 15 | 多起点贪心 → 2-opt → Or-opt | 精确解指数爆炸，启发式够用 |
+
+**2-opt 不反转虚拟起点**：`i` 从 1 开始，只反转 `path[i..j]`。收益是
+`D[a][b] + D[c][e] - D[a][c] - D[b][e]`（`j` 在末尾时没有 `e`，
+退化成 `D[a][b] - D[a][c]`）。
+
+两处刻意的实现选择：
+
+- **best-improvement 而不是 first-improvement**：每轮扫完所有 `(i,j)` 取
+  收益最大的一步，一轮只走一步。收敛轮数远小于 `max_iter`，所以
+  `max_iter` 只是安全上限，不是性能瓶颈。
+- **2-opt 的内层用 numpy 向量化**：固定 `i` 时，所有 `j` 的收益可以一次算
+  出来（`D[cs[:-1], es]` 这种成对索引），避免 O(N²) 的纯 Python 循环。
+
+### 统一编号：这一层最容易悄悄错
+
+`ordering.py` 只认整数 ID，但 litematic 里每个文件的调色板是各自排的：
+同一个「石头」在 A 文件里可能是 3、在 B 文件里是 7。**必须跨文件统一编号**，
+否则距离全错，而且不会报错 —— 只会给出一个看起来正常但更贵的顺序。
+
+判据写进了测试：**两份内容完全相同的投影，距离必须是 0**。
+
+### 尺寸必须一致，且不裁边
+
+- 不同尺寸直接报错，**不做缩放** —— 缩放会凭空造出替换次数
+- 一律按投影的**完整包围盒**取网格，不裁到内容范围。裁了以后不同文件的
+  留白位置会不一样，同样对不齐
+
+### 8000 阈值只影响标注
+
+一个 128×128 块有 16384 格，8000 约等于一半。某步超过就在备注列打 ⚠️，
+并在表尾汇总。它**不参与优化目标**，测试里直接断言：阈值取 1e9 / 8000 /
+中位数三种值，**顺序和总成本完全一致**，只有 ⚠️ 数量变化。
+
+因为是纯渲染，改阈值时走 `/api/order/threshold`：拿任务里缓存的距离矩阵和
+路径重渲染一遍，**不重新求解、不重传文件**，实测 1 ms。
+
+### 为什么要单独出一个 txt
+
+界面上已经**把每一块都列出来了**（步 / 块索引 / 本步替换 / 累计 / 备注，超阈值
+的行整行标色），和 txt 是同一份数据。仍然单独出 txt 的理由：
+
+- 界面上是滚动区域，几十上百行看着累；txt 是完整文件，可以拿去对照施工
+- txt 里多一份**「块索引 → 文件名」对照表** —— 顺序里写的是数字，没有这张表
+  根本对不上是哪个文件，尤其是自由上传的时候
+
+> 早期版本界面上只渲染超阈值的几步，但用户需要的是**每一步的替换量**都能看到，
+> 所以现在改成全表渲染。代价是 JSON 里多带 `rows`，N 最多几百，几十 KB。
+
+

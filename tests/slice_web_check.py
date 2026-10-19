@@ -184,6 +184,8 @@ PROBE = r"""
       // ---- 初始状态 ----
       rec("planSecHiddenAtStart", el("sl-plan-sec").hidden);
       rec("prevEmptyAtStart", el("sl-prev-empty").hidden === false);
+      // 还没切分，排序按钮不能点
+      rec("orderBtnBeforeSlice", el("sl-order-run").disabled);
 
       // ---- 上传 ----
       putFile(b64ToFile());
@@ -271,6 +273,91 @@ PROBE = r"""
       rec("zipBytes", zb.byteLength);
       const zt = new Uint8Array(zb.slice(0, 2));
       rec("zipMagicOK", zt[0] === 0x50 && zt[1] === 0x4b);
+
+      // ============ 铺设顺序：用切分结果 ============
+      await waitFor(() => el("sl-order-run").disabled === false, 20000,
+                    "order-enabled");      rec("orderBtnText", el("sl-order-run").textContent.trim());
+
+      el("sl-order-run").click();
+      await waitFor(() => el("sl-order-out").hidden === false, 60000,
+                    "order-done");
+      rec("orderSummary", el("sl-order-summary").textContent);
+      rec("orderSeq", el("sl-order-seq").textContent);
+      rec("orderNodeCount",
+          el("sl-order-seq").querySelectorAll(".sl-order-node").length);
+      const ord = SL.order || {};
+      rec("orderTotal", ord.total);
+      rec("orderOrder", (ord.order || []).join(","));
+      rec("orderNames", (ord.names || []).join(","));
+      rec("orderSaveShown", el("sl-order-save").hidden === false);
+      // 明细表：**每一步**都要列出来，不只是超阈值的
+      rec("stepRowCount",
+          el("sl-order-steps").querySelectorAll(".sl-step-row").length);
+      rec("stepRowsInResult", (ord.rows || []).length);
+      rec("stepOverRows",
+          el("sl-order-steps").querySelectorAll(".sl-step-row.is-over").length);
+      rec("stepHighCount", (ord.high || []).length);
+      rec("stepText", el("sl-order-steps").textContent);
+      rec("stepFoot",
+          (el("sl-order-steps").querySelector(".sl-step-foot") || {}).textContent);
+
+      // txt 能下下来，内容有对照表和明细
+      const tr = await fetch("/api/order/txt/" + SO.taskId);
+      const ttext = await tr.text();
+      rec("orderTxtStatus", tr.status);
+      rec("orderTxtLen", ttext.length);
+      rec("orderTxtHasMap", ttext.indexOf("块索引 → 文件名") >= 0);
+      rec("orderTxtHasTable", ttext.indexOf("总替换次数 =") >= 0);
+      rec("orderTxtHasOrder", ttext.indexOf("铺设顺序（按先后）") >= 0);
+      rec("orderTxtTotal", (ttext.match(/总替换次数 = (\d+)/) || [])[1]);
+
+      // 改阈值：顺序和成本不能变，只有 ⚠️ 数量变
+      const totalBefore = ord.total;
+      el("sl-order-threshold").value = "100";
+      el("sl-order-threshold").dispatchEvent(new Event("change", { bubbles: true }));
+      await waitFor(() => SL.order && SL.order.threshold === 100, 20000,
+                    "order-threshold");
+      rec("orderTotalAfterThresh", SL.order.total);
+      rec("orderSameAfterThresh", SL.order.total === totalBefore);
+      rec("orderHighAfterThresh", (SL.order.high || []).length);
+      rec("orderHighBeforeThresh", (ord.high || []).length);
+      const ttext2 = await (await fetch("/api/order/txt/" + SO.taskId)).text();
+      rec("orderTxtThreshUpdated", ttext2.indexOf("阈值：100 格") >= 0);
+      // 改阈值后：行数不变（还是全部步骤），只是标色的行变多
+      rec("stepRowsAfterThresh",
+          el("sl-order-steps").querySelectorAll(".sl-step-row").length);
+      rec("stepOverAfterThresh",
+          el("sl-order-steps").querySelectorAll(".sl-step-row.is-over").length);
+      rec("stepFootAfterThresh",
+          (el("sl-order-steps").querySelector(".sl-step-foot") || {}).textContent);
+
+      // ============ 铺设顺序：自由上传 ============
+      const picked = [];
+      for (const i of [0, 2]) {
+        const rr = await fetch("/api/slice/file/" + SL.taskId + "/" + i);
+        const bb = await rr.arrayBuffer();
+        picked.push(new File([bb], "自由块" + i + ".litematic"));
+      }
+      const dt2 = new DataTransfer();
+      picked.forEach(f => dt2.items.add(f));
+      const oinp = el("sl-order-files");
+      Object.defineProperty(oinp, "files", {
+        value: dt2.files, writable: false, configurable: true });
+      oinp.dispatchEvent(new Event("change", { bubbles: true }));
+
+      rec("pickedShown", el("sl-order-picked").hidden === false);
+      rec("pickedRows",
+          el("sl-order-picked").querySelectorAll(".sl-order-picked-row").length);
+      rec("pickedIdx",
+          Array.from(el("sl-order-picked").querySelectorAll(".sl-order-idx"))
+            .map(e => e.textContent).join(","));
+
+      await waitFor(() => SL.order && SL.order.count === 2
+                    && el("sl-order-out").hidden === false, 60000, "order-upload");
+      rec("uploadCount", SL.order.count);
+      rec("uploadNames", (SL.order.names || []).join(","));
+      rec("uploadTotal", SL.order.total);
+      rec("uploadOrder", (SL.order.order || []).join(","));
 
       rec("ok", true);
     } catch (e) {
@@ -451,6 +538,69 @@ def main():
               num("firstFileBytes", 0) > 100 and g("firstFileGzip") is True)
         check("zip 出口可用（%s 字节）" % g("zipBytes"),
               num("zipBytes", 0) > 100 and g("zipMagicOK") is True)
+
+        # ---- 铺设顺序：用切分结果 ----
+        check("切分前「排顺序」按钮不可点", g("orderBtnBeforeSlice") is True)
+        check("切分后按钮可用且显示块数（%s）" % str(g("orderBtnText"))[:30],
+              "4" in str(g("orderBtnText")) and "排顺序" in str(g("orderBtnText")))
+        check("排序生成成功，概览有内容（%s）" % str(g("orderSummary"))[:44],
+              "最小总替换" in str(g("orderSummary")))
+        check("顺序条渲染了 4 个块节点（%s）" % g("orderNodeCount"),
+              num("orderNodeCount", 0) == 4)
+        check("顺序是 0..3 的排列（%s）" % g("orderOrder"),
+              sorted(str(g("orderOrder") or "").split(",")) ==
+              ["0", "1", "2", "3"])
+        check("文件名对照回传（%s）" % str(g("orderNames"))[:50],
+              "litematic" in str(g("orderNames")))
+        check("保存 txt 按钮出现", g("orderSaveShown") is True)
+
+        # ---- 明细表：全部步骤 ----
+        check("明细表列出了全部 %s 步（实际 %s 行）"
+              % (g("orderTotal") and g("stepRowsInResult"), g("stepRowCount")),
+              num("stepRowCount", 0) == num("stepRowsInResult", -1) == 4)
+        check("每行都带替换量（表头有「本步替换」）",
+              "本步替换" in str(g("stepText")))
+        check("累计列也在", "累计" in str(g("stepText")))
+        check("表尾显示总步数和总替换（%s）" % str(g("stepFoot"))[:40],
+              "共 4 步" in str(g("stepFoot")))
+        check("超阈值的行有标色（%s 行 = high %s）"
+              % (g("stepOverRows"), g("stepHighCount")),
+              num("stepOverRows", -1) == num("stepHighCount", -2))
+
+        check("txt 能下载（%s，%s 字节）" % (g("orderTxtStatus"), g("orderTxtLen")),
+              num("orderTxtStatus", 0) == 200 and num("orderTxtLen", 0) > 300)
+        check("txt 里有「块索引 → 文件名」对照表", g("orderTxtHasMap") is True)
+        check("txt 里有逐步明细表", g("orderTxtHasTable") is True)
+        check("txt 里有铺设顺序段", g("orderTxtHasOrder") is True)
+        check("txt 里的总数和界面一致（%s）" % g("orderTxtTotal"),
+              str(g("orderTxtTotal")) == str(g("orderTotal")))
+
+        # ---- 改阈值：只影响标注 ----
+        check("改阈值后总成本不变（%s）" % g("orderTotalAfterThresh"),
+              g("orderSameAfterThresh") is True
+              and num("orderTotalAfterThresh", -1) == num("orderTotal", -2))
+        check("阈值降到 100 后 ⚠️ 步数变多（%s > %s）"
+              % (g("orderHighAfterThresh"), g("orderHighBeforeThresh")),
+              num("orderHighAfterThresh", 0) > num("orderHighBeforeThresh", 99))
+        check("txt 里的阈值也跟着更新", g("orderTxtThreshUpdated") is True)
+        check("改阈值后仍然列出全部步骤（%s 行）" % g("stepRowsAfterThresh"),
+              num("stepRowsAfterThresh", 0) == 4)
+        check("改阈值后超阈值的行被标色（%s 行）" % g("stepOverAfterThresh"),
+              num("stepOverAfterThresh", 0) == 4
+              and num("stepOverAfterThresh", -1) == num("orderHighAfterThresh", -2))
+        check("表尾总替换不跟着阈值变（%s）" % str(g("stepFootAfterThresh"))[:34],
+              "9,707" in str(g("stepFootAfterThresh")))
+
+        # ---- 铺设顺序：自由上传 ----
+        check("自由上传后显示「块索引 → 文件名」列表（%s 行）" % g("pickedRows"),
+              g("pickedShown") is True and num("pickedRows", 0) == 2)
+        check("编号从 0 开始（%s）" % g("pickedIdx"), g("pickedIdx") == "0,1")
+        check("自由上传也能排（%s 块）" % g("uploadCount"),
+              num("uploadCount", 0) == 2)
+        check("自由上传的块数/文件名对得上（%s）" % str(g("uploadNames"))[:44],
+              "自由块0.litematic" in str(g("uploadNames")))
+        check("自由上传顺序合法（%s）" % g("uploadOrder"),
+              sorted(str(g("uploadOrder") or "").split(",")) == ["0", "1"])
         check("整段流程跑完", g("ok") is True)
     finally:
         if proc:

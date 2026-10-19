@@ -9,9 +9,13 @@
 噪点修正操作直接改这张索引画布，最后回写到投影文件。
 """
 import base64
+import gzip
+import io
 import math
 
 import numpy as np
+from litemapy import BlockState, Region, Schematic
+from nbtlib import File
 
 from .palette import BLOCK_INDEX
 from .repair import (_brush_mask, _denoise_region, _polygon_mask,
@@ -66,9 +70,112 @@ def _clean_key(v):
 
 
 # ---------------------------------------------------------------- 载入
+def _load_projection_schematic(content):
+    """优先按 .litematic 解析；失败时尝试结构方块 NBT / .bnt 结构。"""
+    try:
+        return _load_schematic(content)
+    except Exception:
+        pass
+
+    raw = gzip.decompress(content) if content[:2] == b"\x1f\x8b" else content
+    nbt = File.parse(io.BytesIO(raw))
+    root = nbt if hasattr(nbt, "get") else nbt
+    # 结构方块 NBT：size / palette / blocks
+    if "size" in root and "palette" in root and "blocks" in root:
+        return _schematic_from_structure_nbt(root)
+    # Sponge .schem：Palette / BlockData / Width / Height / Length
+    if "Palette" in root and "BlockData" in root and "Width" in root:
+        return _schematic_from_sponge_nbt(root)
+    raise ValueError("无法识别的投影/NBT格式（支持 .litematic / .bnt 结构 NBT）")
+
+
+def _nbt_int_list(v):
+    return [int(x) for x in v]
+
+
+def _schematic_from_structure_nbt(root):
+    size = _nbt_int_list(root["size"])
+    if len(size) < 3:
+        raise ValueError("结构 NBT 的 size 无效")
+    sx, sy, sz = int(size[0]), int(size[1]), int(size[2])
+    palette = root["palette"]
+    states = []
+    for item in palette:
+        name = str(item.get("Name", "minecraft:air"))
+        props = {}
+        raw_props = item.get("Properties")
+        if raw_props is not None:
+            props = {str(k): str(v) for k, v in raw_props.items()}
+        states.append(BlockState(name, **props))
+    reg = Region(0, 0, 0, sx, sy, sz)
+    for b in root["blocks"]:
+        pos = _nbt_int_list(b["pos"])
+        if len(pos) < 3:
+            continue
+        state_id = int(b["state"])
+        if 0 <= state_id < len(states):
+            reg[int(pos[0]), int(pos[1]), int(pos[2])] = states[state_id]
+    name = str(root.get("name", "projection"))
+    return Schematic(name=name, regions={"main": reg})
+
+
+def _read_varints(data):
+    out = []
+    val = 0
+    shift = 0
+    for b in data:
+        b = int(b) & 255
+        val |= (b & 0x7F) << shift
+        if b & 0x80:
+            shift += 7
+        else:
+            out.append(val)
+            val = 0
+            shift = 0
+    return out
+
+
+def _schematic_from_sponge_nbt(root):
+    sx = int(root["Width"]); sy = int(root["Height"]); sz = int(root["Length"])
+    palette = root["Palette"]
+    names = {}
+    for k, v in palette.items():
+        names[int(v)] = str(k)
+    states = []
+    max_id = max(names.keys()) if names else -1
+    for i in range(max_id + 1):
+        raw = names.get(i, "minecraft:air")
+        # Sponge 的 key 形如 minecraft:stone[property=value]
+        name, _, prop_txt = raw.partition("[")
+        props = {}
+        if prop_txt.endswith("]"):
+            for part in prop_txt[:-1].split(","):
+                k, sep, v = part.partition("=")
+                if sep:
+                    props[k.strip()] = v.strip()
+        states.append(BlockState(name, **props))
+    reg = Region(0, 0, 0, sx, sy, sz)
+    data = _read_varints(root["BlockData"])
+    expected = sx * sy * sz
+    if len(data) < expected:
+        raise ValueError("Sponge BlockData 长度不足")
+    # Sponge 下标顺序：y, z, x
+    i = 0
+    for y in range(sy):
+        for z in range(sz):
+            for x in range(sx):
+                sid = data[i] if i < len(data) else 0
+                i += 1
+                if 0 <= sid < len(states):
+                    st = states[sid]
+                    if getattr(st, "id", "") != "minecraft:air":
+                        reg[x, y, z] = st
+    return Schematic(name="projection", regions={"main": reg})
+
+
 def load_canvas(content):
     """把 .litematic 读成 XZ 俯视索引画布。"""
-    schem = _load_schematic(content)
+    schem = _load_projection_schematic(content)
     src = _SourceIndex(schem)
     # 内容范围（相对 src 包围盒）
     bx0, bz0, bx1, bz1 = src.content_bbox()

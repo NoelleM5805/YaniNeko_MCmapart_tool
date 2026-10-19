@@ -38,5 +38,5 @@ YaniNeko_MCmapart_tool —— 地图画工具箱
     dist/                 发行版
 """
 
-__version__ = "1.38"
+__version__ = "1.38.2"
 __all__ = ["__version__"]
